@@ -23,3 +23,15 @@ LaTeX format, preserve truthful experience and qualifications, and write the
 complete optimized resume to the required output file. Do not fetch or validate
 the URLs in this wrapper; use them as the job-offer references for the Codex
 run.
+
+When inspecting LaTeX control sequences with `rg`, search for them as literal
+strings instead of regex patterns. For example:
+
+```bash
+rg -n -F \
+  -e '\begin{document}' \
+  -e '\end{document}' \
+  -e '\section*' \
+  -e '\newpage' \
+  new.tex
+```

@@ -143,6 +143,18 @@ class RenderingTests(unittest.TestCase):
                 output_resume="new.tex",
             )
 
+    def test_rendered_prompt_tells_codex_to_search_latex_markers_literally(self):
+        rendered = make_my_resume_fit.render_template(
+            make_my_resume_fit.load_template(),
+            input_resume="orig.tex",
+            job_offers=["https://example.com/a"],
+            output_resume="new.tex",
+        )
+
+        self.assertIn("rg -n -F", rendered)
+        self.assertIn("-e '\\begin{document}'", rendered)
+        self.assertIn("-e '\\section*'", rendered)
+
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_sandboxes_temp_run_dir_only(self):
