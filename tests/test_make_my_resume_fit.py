@@ -155,6 +155,19 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("-e '\\begin{document}'", rendered)
         self.assertIn("-e '\\section*'", rendered)
 
+    def test_rendered_prompt_tells_codex_to_fetch_job_offer_urls(self):
+        rendered = make_my_resume_fit.render_template(
+            make_my_resume_fit.load_template(),
+            input_resume="orig.tex",
+            job_offers=["https://example.com/a"],
+            output_resume="new.tex",
+        )
+
+        self.assertIn("Fetch and read every supplied job offer URL", rendered)
+        self.assertIn("fetched job descriptions", rendered)
+        self.assertIn("use the available live search or browser tools", rendered)
+        self.assertNotIn("Do not fetch or validate", rendered)
+
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_sandboxes_temp_run_dir_only(self):
@@ -162,6 +175,9 @@ class CodexInvocationTests(unittest.TestCase):
             make_my_resume_fit.build_codex_command(Path("/tmp/run")),
             [
                 "codex",
+                "--search",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
                 "exec",
                 "--sandbox",
                 "workspace-write",
@@ -192,6 +208,9 @@ class CodexInvocationTests(unittest.TestCase):
         run.assert_called_once_with(
             [
                 "codex",
+                "--search",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
                 "exec",
                 "--sandbox",
                 "workspace-write",

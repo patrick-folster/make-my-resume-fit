@@ -149,6 +149,9 @@ def build_codex_command(run_dir: Path) -> list[str]:
     """Return the sandboxed Codex command used to consume the prompt on stdin."""
     return [
         "codex",
+        "--search",
+        "-c",
+        "sandbox_workspace_write.network_access=true",
         "exec",
         "--sandbox",
         "workspace-write",

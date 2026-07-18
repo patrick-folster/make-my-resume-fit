@@ -20,9 +20,14 @@ Output resume file:
 
 Optimize the LaTeX resume for the supplied job offers. Keep the output in
 LaTeX format, preserve truthful experience and qualifications, and write the
-complete optimized resume to the required output file. Do not fetch or validate
-the URLs in this wrapper; use them as the job-offer references for the Codex
-run.
+complete optimized resume to the required output file.
+
+Fetch and read every supplied job offer URL before tailoring the resume. Base
+the optimization on the fetched job descriptions, requirements, responsibilities,
+and terminology. If shell commands such as `curl` cannot resolve or access a
+URL, use the available live search or browser tools to fetch the posting. If a
+URL still cannot be fetched after those options, clearly report that failure and
+do not invent role-specific details from the URL alone.
 
 When inspecting LaTeX control sequences with `rg`, search for them as literal
 strings instead of regex patterns. For example:

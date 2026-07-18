@@ -21,13 +21,16 @@ the system temp folder, copies the validated resume into that directory as
 and invokes:
 
 ```bash
-codex exec --sandbox workspace-write --skip-git-repo-check -C <temp-run-directory> -
+codex --search -c sandbox_workspace_write.network_access=true exec --sandbox workspace-write --skip-git-repo-check -C <temp-run-directory> -
 ```
 
 The rendered prompt is passed to Codex on standard input. Codex is instructed to
-read `orig.tex` and write the optimized LaTeX resume as `new.tex` in the temp
-run directory. The wrapper does not grant Codex direct access to the repository
-root, the original resume path, or the final output folder.
+read `orig.tex`, fetch and process every supplied job offer URL, and write the
+optimized LaTeX resume as `new.tex` in the temp run directory. The wrapper does
+not grant Codex direct access to the repository root, the original resume path,
+or the final output folder. The `--search` flag gives the Codex run live search
+access, and `sandbox_workspace_write.network_access=true` allows sandboxed shell
+commands such as `curl` to fetch job postings directly.
 
 After Codex exits successfully, the script verifies that the temp run directory
 contains a file named `new.tex`, creates `--output-folder` when needed, and
