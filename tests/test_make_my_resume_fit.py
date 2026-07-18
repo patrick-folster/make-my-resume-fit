@@ -385,6 +385,85 @@ class CodexInvocationTests(unittest.TestCase):
                 make_my_resume_fit.validate_metadata_json(metadata_path)
 
 
+class PublicationTests(unittest.TestCase):
+    def test_copy_final_artifacts_writes_dated_versioned_archive_from_metadata_slug(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "new.tex"
+            output = root / "out"
+            generated.write_text("% tailored", encoding="utf-8")
+            metadata = valid_changes_payload()
+
+            archive = make_my_resume_fit.copy_final_artifacts(
+                generated,
+                metadata,
+                output,
+                current_date=dt.date(2026, 7, 18),
+            )
+
+            self.assertEqual(
+                archive,
+                (output / "2026-07-18-v1-example-python-engineer").resolve(),
+            )
+            self.assertEqual((archive / "new.tex").read_text(encoding="utf-8"), "% tailored")
+            metadata_text = (archive / "metadata.json").read_text(encoding="utf-8")
+            self.assertEqual(json.loads(metadata_text), metadata)
+            self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
+            self.assertFalse((output / "new.tex").exists())
+            self.assertFalse((output / "metadata.json").exists())
+
+    def test_create_archive_directory_uses_next_version_without_modifying_existing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "out"
+            existing = output / "2026-07-18-v1-example-python-engineer"
+            existing.mkdir(parents=True)
+            sentinel = existing / "sentinel.txt"
+            sentinel.write_text("keep", encoding="utf-8")
+
+            archive = make_my_resume_fit.create_archive_directory(
+                output,
+                "example-python-engineer",
+                current_date=dt.date(2026, 7, 18),
+            )
+
+            self.assertEqual(
+                archive,
+                (output / "2026-07-18-v2-example-python-engineer").resolve(),
+            )
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_copy_final_artifacts_rejects_unusable_slug_before_creating_output_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "new.tex"
+            output = root / "out"
+            generated.write_text("% tailored", encoding="utf-8")
+            metadata = valid_changes_payload()
+            metadata["slug"] = ""
+
+            with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "usable slug"):
+                make_my_resume_fit.copy_final_artifacts(
+                    generated,
+                    metadata,
+                    output,
+                    current_date=dt.date(2026, 7, 18),
+                )
+
+            self.assertFalse(output.exists())
+
+    def test_create_archive_directory_rejects_existing_output_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "out"
+            output.write_text("not a directory", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "not a directory"):
+                make_my_resume_fit.create_archive_directory(
+                    output,
+                    "example-python-engineer",
+                    current_date=dt.date(2026, 7, 18),
+                )
+
+
 class RunTests(unittest.TestCase):
     def test_run_validates_renders_invokes_and_copies_new_tex(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -412,13 +491,21 @@ class RunTests(unittest.TestCase):
                     timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
                 )
 
+            class FixedDate(dt.date):
+                @classmethod
+                def today(cls):
+                    return cls(2026, 7, 18)
+
             with mock.patch(
                 "make_my_resume_fit.create_run_workspace",
                 side_effect=create_test_workspace,
             ), mock.patch(
                 "make_my_resume_fit.invoke_codex",
                 side_effect=write_generated_resume,
-            ) as invoke:
+            ) as invoke, mock.patch(
+                "make_my_resume_fit.dt.date",
+                FixedDate,
+            ):
                 exit_code = make_my_resume_fit.run(
                     [
                         "--original-resume",
@@ -432,13 +519,17 @@ class RunTests(unittest.TestCase):
 
                 self.assertEqual(exit_code, 0)
                 self.assertTrue(output.is_dir())
-                self.assertEqual((output / "new.tex").read_text(encoding="utf-8"), "% tailored")
-                metadata_text = (output / "metadata.json").read_text(encoding="utf-8")
+                archive = output / "2026-07-18-v1-example-python-engineer"
+                self.assertTrue(archive.is_dir())
+                self.assertEqual((archive / "new.tex").read_text(encoding="utf-8"), "% tailored")
+                metadata_text = (archive / "metadata.json").read_text(encoding="utf-8")
                 self.assertEqual(
                     json.loads(metadata_text),
                     valid_changes_payload(),
                 )
                 self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
+                self.assertFalse((output / "new.tex").exists())
+                self.assertFalse((output / "metadata.json").exists())
                 run_dir = invoke.call_args.kwargs["run_dir"]
                 self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 prompt = invoke.call_args.args[0]
@@ -478,6 +569,53 @@ class RunTests(unittest.TestCase):
             ), mock.patch(
                 "make_my_resume_fit.invoke_codex",
                 side_effect=write_generated_resume,
+            ):
+                exit_code = make_my_resume_fit.run(
+                    [
+                        "--original-resume",
+                        str(resume),
+                        "--job-offer",
+                        "https://example.com/a",
+                        "--output-folder",
+                        str(output),
+                    ]
+                )
+
+                self.assertEqual(exit_code, 1)
+                self.assertFalse(output.exists())
+
+    def test_run_reports_malformed_metadata_json_without_creating_output_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            output = root / "out"
+            resume.write_text("% resume", encoding="utf-8")
+
+            def write_malformed_outputs(prompt, *, run_dir):
+                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                    "% tailored",
+                    encoding="utf-8",
+                )
+                (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
+                    "{not json",
+                    encoding="utf-8",
+                )
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch(
+                "make_my_resume_fit.invoke_codex",
+                side_effect=write_malformed_outputs,
             ):
                 exit_code = make_my_resume_fit.run(
                     [

@@ -26,6 +26,7 @@ PLACEHOLDERS = {
     "output_resume": "{{OUTPUT_RESUME}}",
 }
 UNRESOLVED_PLACEHOLDER_RE = re.compile(r"{{[^{}]+}}")
+SAFE_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class CodexInvocationError(RuntimeError):
@@ -311,26 +312,72 @@ def validate_metadata_json(
     return metadata
 
 
-def copy_generated_resume(generated_resume: Path, output_folder: Path) -> Path:
-    """Copy temp new.tex to the deterministic final output path."""
+def validate_metadata_slug(metadata: dict[str, Any]) -> str:
+    """Return the validated archive slug from metadata.json.
+
+    The schema already enforces this today, but keeping the runtime guard close
+    to filesystem publication prevents future schema loosening from creating
+    unsafe archive paths.
+    """
+    slug = metadata.get("slug")
+    if not isinstance(slug, str) or SAFE_SLUG_RE.fullmatch(slug) is None:
+        raise CodexInvocationError(
+            f"Codex structured output {METADATA_FILENAME} does not contain a usable slug."
+        )
+    return slug
+
+
+def create_archive_directory(
+    output_folder: Path,
+    slug: str,
+    *,
+    current_date: dt.date | None = None,
+) -> Path:
+    """Create and return the next dated, versioned archive directory."""
+    if not isinstance(slug, str) or SAFE_SLUG_RE.fullmatch(slug) is None:
+        raise CodexInvocationError(f"archive slug is not filesystem safe: {slug!r}")
+
     output = ensure_output_folder(output_folder)
-    final_resume = output / TAILORED_RESUME_FILENAME
-    shutil.copyfile(generated_resume, final_resume)
-    return final_resume
+    archive_date = current_date or dt.date.today()
+    archive_prefix = archive_date.isoformat()
+
+    for version in range(1, 1000):
+        archive_dir = output / f"{archive_prefix}-v{version}-{slug}"
+        try:
+            archive_dir.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        return archive_dir.resolve()
+
+    raise CodexInvocationError(
+        f"could not create a unique archive directory under {output} for slug {slug!r}."
+    )
 
 
 def copy_final_artifacts(
     generated_resume: Path,
     metadata: dict[str, Any],
     output_folder: Path,
-) -> None:
-    """Publish validated temp artifacts to the user-requested output folder."""
-    output = ensure_output_folder(output_folder)
-    shutil.copyfile(generated_resume, output / TAILORED_RESUME_FILENAME)
-    (output / METADATA_FILENAME).write_text(
-        json.dumps(metadata, indent=2) + "\n",
-        encoding="utf-8",
+    *,
+    current_date: dt.date | None = None,
+) -> Path:
+    """Publish validated temp artifacts to a dated archive directory."""
+    slug = validate_metadata_slug(metadata)
+    archive_dir = create_archive_directory(
+        output_folder,
+        slug,
+        current_date=current_date,
     )
+    try:
+        shutil.copyfile(generated_resume, archive_dir / TAILORED_RESUME_FILENAME)
+        (archive_dir / METADATA_FILENAME).write_text(
+            json.dumps(metadata, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        shutil.rmtree(archive_dir, ignore_errors=True)
+        raise
+    return archive_dir
 
 
 def run(argv: Sequence[str] | None = None) -> int:

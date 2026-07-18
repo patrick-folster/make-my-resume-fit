@@ -39,18 +39,27 @@ such as `curl` to fetch job postings directly.
 
 After Codex exits successfully, the script verifies that the temp run directory
 contains a file named `new.tex`, verifies that the captured structured response
-is valid JSON matching the repository schema, creates `--output-folder` when
-needed, and writes both final artifacts:
+is valid JSON matching the repository schema, reads the validated metadata
+`slug`, creates `--output-folder` when needed, and writes both final artifacts to
+a dated run archive:
 
 ```text
-<output-folder>/new.tex
-<output-folder>/metadata.json
+<output-folder>/
+`-- 2026-07-18-v1-example-python-engineer/
+    |-- new.tex
+    `-- metadata.json
 ```
 
-If either final file already exists, it is overwritten. Temp run directories are
-preserved for debugging. The wrapper fails without copying partial final output
-when Codex exits successfully but omits `new.tex`, omits `metadata.json`, returns
-malformed JSON, or returns JSON that does not match the schema.
+Archive folder names use the system local date in `yyyy-mm-dd` format, a version
+index, and the validated metadata slug:
+`<yyyy>-<mm>-<dd>-v<index>-<metadata-slug>`. The version index starts at `v1`
+for each date and slug combination. If a matching `v1` archive already exists,
+the wrapper creates the next available folder such as `v2` or `v3` without
+modifying the existing archive. Temp run directories are preserved for debugging.
+The wrapper fails without creating the final output folder or archive when Codex
+exits successfully but omits `new.tex`, omits `metadata.json`, returns malformed
+JSON, returns JSON that does not match the schema, or returns metadata without a
+usable slug.
 
 When installed as a package, the CLI entry point is:
 

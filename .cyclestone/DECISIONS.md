@@ -32,3 +32,15 @@
 - Final artifacts are published only after both `new.tex` and structured
   `changes.json` validate, preventing partial successful output in the requested
   output folder.
+
+## 0005 Archive Run Artifacts
+
+- Final artifacts are published under
+  `<output-folder>/<yyyy>-<mm>-<dd>-v<index>-<metadata-slug>/`, using the system
+  local date and the validated `slug` from Codex's `metadata.json`.
+- Archive version selection probes from `v1` upward and creates the selected
+  directory with `exist_ok=False`, so existing archives are not overwritten or
+  modified.
+- The wrapper keeps output-folder creation until after `new.tex` and
+  `metadata.json` have both validated, and it performs a defensive filesystem
+  slug check before creating an archive directory.
