@@ -1,3 +1,4 @@
+import datetime as dt
 import subprocess
 import tempfile
 import unittest
@@ -47,6 +48,11 @@ class ValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not exist"):
                 make_my_resume_fit.validate_resume_path(root / "missing.tex")
 
+    def test_validate_resume_path_rejects_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "not a file"):
+                make_my_resume_fit.validate_resume_path(Path(tmp))
+
     def test_ensure_output_folder_creates_directory_and_rejects_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -60,82 +66,115 @@ class ValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not a directory"):
                 make_my_resume_fit.ensure_output_folder(file_path)
 
+    def test_create_run_workspace_copies_resume_to_timestamped_temp_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            resume.write_text("% source resume", encoding="utf-8")
+
+            run_dir = make_my_resume_fit.create_run_workspace(
+                resume,
+                temp_root=root / "temp",
+                timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+            )
+
+            self.assertEqual(
+                run_dir.name,
+                "make-my-resume-fit-20260718T123456123456",
+            )
+            self.assertEqual(run_dir.parent, (root / "temp").resolve())
+            self.assertEqual(
+                (run_dir / make_my_resume_fit.ORIGINAL_RESUME_FILENAME).read_text(
+                    encoding="utf-8"
+                ),
+                "% source resume",
+            )
+
+    def test_create_run_workspace_adds_suffix_for_name_collision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            resume.write_text("% source resume", encoding="utf-8")
+            timestamp = dt.datetime(2026, 7, 18, 12, 34, 56, 123456)
+
+            first = make_my_resume_fit.create_run_workspace(
+                resume,
+                temp_root=root,
+                timestamp=timestamp,
+            )
+            second = make_my_resume_fit.create_run_workspace(
+                resume,
+                temp_root=root,
+                timestamp=timestamp,
+            )
+
+            self.assertEqual(first.name, "make-my-resume-fit-20260718T123456123456")
+            self.assertEqual(second.name, "make-my-resume-fit-20260718T123456123456-01")
+
 
 class RenderingTests(unittest.TestCase):
     def test_render_template_replaces_all_placeholders(self):
         template = (
-            "Resume: {{ORIGINAL_RESUME}}\n"
+            "Resume: {{INPUT_RESUME}}\n"
             "Jobs:\n{{JOB_OFFER_URLS}}\n"
-            "Output: {{OUTPUT_FOLDER}}\n"
+            "Output: {{OUTPUT_RESUME}}\n"
         )
 
         rendered = make_my_resume_fit.render_template(
             template,
-            original_resume=Path("/tmp/resume.tex"),
+            input_resume="orig.tex",
             job_offers=["https://example.com/a", "https://example.com/b"],
-            output_folder=Path("/tmp/out"),
+            output_resume="new.tex",
         )
 
-        self.assertIn("Resume: /tmp/resume.tex", rendered)
+        self.assertIn("Resume: orig.tex", rendered)
         self.assertIn("- https://example.com/a\n- https://example.com/b", rendered)
-        self.assertIn("Output: /tmp/out", rendered)
+        self.assertIn("Output: new.tex", rendered)
+        self.assertNotIn("/tmp/resume.tex", rendered)
+        self.assertNotIn("/tmp/out", rendered)
         self.assertNotRegex(rendered, make_my_resume_fit.UNRESOLVED_PLACEHOLDER_RE)
 
     def test_render_template_rejects_unresolved_placeholders(self):
         with self.assertRaisesRegex(ValueError, "unresolved placeholders"):
             make_my_resume_fit.render_template(
-                "{{ORIGINAL_RESUME}} {{UNKNOWN}}",
-                original_resume=Path("resume.tex"),
+                "{{INPUT_RESUME}} {{UNKNOWN}}",
+                input_resume="orig.tex",
                 job_offers=["https://example.com/a"],
-                output_folder=Path("out"),
+                output_resume="new.tex",
             )
 
 
 class CodexInvocationTests(unittest.TestCase):
-    def test_build_codex_command_sandboxes_project_local_output(self):
+    def test_build_codex_command_sandboxes_temp_run_dir_only(self):
         self.assertEqual(
-            make_my_resume_fit.build_codex_command(
-                Path("/tmp/project/out"),
-                working_root=Path("/tmp/project"),
-            ),
+            make_my_resume_fit.build_codex_command(Path("/tmp/run")),
             [
                 "codex",
                 "exec",
                 "--sandbox",
                 "workspace-write",
                 "-C",
-                "/tmp/project",
+                "/tmp/run",
                 "-",
             ],
         )
 
-    def test_build_codex_command_adds_external_output_folder(self):
-        self.assertEqual(
-            make_my_resume_fit.build_codex_command(
-                Path("/tmp/out"),
-                working_root=Path("/tmp/project"),
-            ),
-            [
-                "codex",
-                "exec",
-                "--sandbox",
-                "workspace-write",
-                "-C",
-                "/tmp/project",
-                "--add-dir",
-                "/tmp/out",
-                "-",
-            ],
-        )
+    def test_build_codex_command_omits_original_resume_repo_and_output_paths(self):
+        command = make_my_resume_fit.build_codex_command(Path("/tmp/run"))
+
+        self.assertNotIn("/tmp/source/resume.tex", command)
+        self.assertNotIn("/tmp/project", command)
+        self.assertNotIn("/tmp/out", command)
+        self.assertNotIn("--add-dir", command)
 
     def test_invoke_codex_passes_prompt_on_stdin(self):
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
-                args=make_my_resume_fit.build_codex_command(Path.cwd() / "out"),
+                args=make_my_resume_fit.build_codex_command(Path("/tmp/run")),
                 returncode=0,
             )
 
-            make_my_resume_fit.invoke_codex("rendered prompt", output_folder=Path.cwd() / "out")
+            make_my_resume_fit.invoke_codex("rendered prompt", run_dir=Path("/tmp/run"))
 
         run.assert_called_once_with(
             [
@@ -144,7 +183,7 @@ class CodexInvocationTests(unittest.TestCase):
                 "--sandbox",
                 "workspace-write",
                 "-C",
-                str(Path.cwd()),
+                "/tmp/run",
                 "-",
             ],
             input="rendered prompt",
@@ -155,28 +194,63 @@ class CodexInvocationTests(unittest.TestCase):
     def test_invoke_codex_reports_missing_executable(self):
         with mock.patch("make_my_resume_fit.subprocess.run", side_effect=FileNotFoundError):
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "not found"):
-                make_my_resume_fit.invoke_codex("prompt", output_folder=Path("/tmp/out"))
+                make_my_resume_fit.invoke_codex("prompt", run_dir=Path("/tmp/run"))
 
     def test_invoke_codex_reports_nonzero_exit(self):
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
-                args=make_my_resume_fit.build_codex_command(Path("/tmp/out")),
+                args=make_my_resume_fit.build_codex_command(Path("/tmp/run")),
                 returncode=7,
             )
 
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "exit code 7"):
-                make_my_resume_fit.invoke_codex("prompt", output_folder=Path("/tmp/out"))
+                make_my_resume_fit.invoke_codex("prompt", run_dir=Path("/tmp/run"))
+
+    def test_validate_generated_resume_requires_new_tex_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                "without producing new.tex",
+            ):
+                make_my_resume_fit.validate_generated_resume(run_dir)
+
+            generated = run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME
+            generated.write_text("% tailored", encoding="utf-8")
+            self.assertEqual(make_my_resume_fit.validate_generated_resume(run_dir), generated)
 
 
 class RunTests(unittest.TestCase):
-    def test_run_validates_renders_and_invokes(self):
+    def test_run_validates_renders_invokes_and_copies_new_tex(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             resume = root / "resume.tex"
             output = root / "out"
             resume.write_text("% resume", encoding="utf-8")
 
-            with mock.patch("make_my_resume_fit.invoke_codex") as invoke:
+            def write_generated_resume(prompt, *, run_dir):
+                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                    "% tailored",
+                    encoding="utf-8",
+                )
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch(
+                "make_my_resume_fit.invoke_codex",
+                side_effect=write_generated_resume,
+            ) as invoke:
                 exit_code = make_my_resume_fit.run(
                     [
                         "--original-resume",
@@ -190,12 +264,94 @@ class RunTests(unittest.TestCase):
 
                 self.assertEqual(exit_code, 0)
                 self.assertTrue(output.is_dir())
+                self.assertEqual((output / "new.tex").read_text(encoding="utf-8"), "% tailored")
+                run_dir = invoke.call_args.kwargs["run_dir"]
+                self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 prompt = invoke.call_args.args[0]
-                self.assertIn(str(resume.resolve()), prompt)
+                self.assertIn("orig.tex", prompt)
+                self.assertIn("new.tex", prompt)
                 self.assertIn("- https://example.com/a", prompt)
-                self.assertIn(str(output.resolve()), prompt)
+                self.assertNotIn(str(resume.resolve()), prompt)
+                self.assertNotIn(str(output.resolve()), prompt)
                 invoke.assert_called_once()
-                self.assertEqual(invoke.call_args.kwargs["output_folder"], output.resolve())
+                self.assertEqual(invoke.call_args.kwargs["run_dir"], run_dir)
+
+    def test_run_reports_missing_new_tex_after_successful_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            output = root / "out"
+            resume.write_text("% resume", encoding="utf-8")
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch("make_my_resume_fit.invoke_codex"):
+                exit_code = make_my_resume_fit.run(
+                    [
+                        "--original-resume",
+                        str(resume),
+                        "--job-offer",
+                        "https://example.com/a",
+                        "--output-folder",
+                        str(output),
+                    ]
+                )
+
+                self.assertEqual(exit_code, 1)
+                self.assertFalse(output.exists())
+                self.assertTrue((root / "runs").exists())
+
+    def test_run_rejects_existing_output_file_before_final_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            output = root / "out"
+            resume.write_text("% resume", encoding="utf-8")
+            output.write_text("not a directory", encoding="utf-8")
+
+            def write_generated_resume(prompt, *, run_dir):
+                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                    "% tailored",
+                    encoding="utf-8",
+                )
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch(
+                "make_my_resume_fit.invoke_codex",
+                side_effect=write_generated_resume,
+            ):
+                with self.assertRaises(SystemExit):
+                    make_my_resume_fit.run(
+                        [
+                            "--original-resume",
+                            str(resume),
+                            "--job-offer",
+                            "https://example.com/a",
+                            "--output-folder",
+                            str(output),
+                        ]
+                    )
 
 
 if __name__ == "__main__":

@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
 
 TEMPLATE_PATH = Path(__file__).with_name("resume-fitter.md")
+ORIGINAL_RESUME_FILENAME = "orig.tex"
+TAILORED_RESUME_FILENAME = "new.tex"
+RUN_DIR_PREFIX = "make-my-resume-fit-"
 PLACEHOLDERS = {
-    "original_resume": "{{ORIGINAL_RESUME}}",
+    "input_resume": "{{INPUT_RESUME}}",
     "job_offer_urls": "{{JOB_OFFER_URLS}}",
-    "output_folder": "{{OUTPUT_FOLDER}}",
+    "output_resume": "{{OUTPUT_RESUME}}",
 }
 UNRESOLVED_PLACEHOLDER_RE = re.compile(r"{{[^{}]+}}")
 
@@ -55,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-folder",
         required=True,
         type=Path,
-        help="Folder where Codex should write the tailored resume output.",
+        help="Folder where the wrapper should copy the tailored resume output.",
     )
     return parser
 
@@ -82,6 +88,30 @@ def ensure_output_folder(path: Path) -> Path:
     return path.resolve()
 
 
+def create_run_workspace(
+    original_resume: Path,
+    *,
+    temp_root: Path | None = None,
+    timestamp: dt.datetime | None = None,
+) -> Path:
+    """Create an isolated temp run directory and copy the resume to orig.tex."""
+    root = Path(temp_root) if temp_root is not None else Path(tempfile.gettempdir())
+    stamp = (timestamp or dt.datetime.now()).strftime("%Y%m%dT%H%M%S%f")
+
+    # The timestamp is enough for normal runs; the suffix handles deterministic
+    # tests, clock collisions, and concurrent invocations in the same microsecond.
+    for suffix in ["", *[f"-{index:02d}" for index in range(1, 100)]]:
+        run_dir = root / f"{RUN_DIR_PREFIX}{stamp}{suffix}"
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            continue
+        shutil.copyfile(original_resume, run_dir / ORIGINAL_RESUME_FILENAME)
+        return run_dir.resolve()
+
+    raise ValueError(f"could not create a unique temp run directory under {root}")
+
+
 def load_template(path: Path = TEMPLATE_PATH) -> str:
     """Load the prompt template from disk."""
     try:
@@ -98,15 +128,15 @@ def format_job_offers(job_offers: Sequence[str]) -> str:
 def render_template(
     template: str,
     *,
-    original_resume: Path,
+    input_resume: str = ORIGINAL_RESUME_FILENAME,
     job_offers: Sequence[str],
-    output_folder: Path,
+    output_resume: str = TAILORED_RESUME_FILENAME,
 ) -> str:
     """Replace all known placeholders and reject unresolved template markers."""
     rendered = (
-        template.replace(PLACEHOLDERS["original_resume"], str(original_resume))
+        template.replace(PLACEHOLDERS["input_resume"], input_resume)
         .replace(PLACEHOLDERS["job_offer_urls"], format_job_offers(job_offers))
-        .replace(PLACEHOLDERS["output_folder"], str(output_folder))
+        .replace(PLACEHOLDERS["output_resume"], output_resume)
     )
     unresolved = UNRESOLVED_PLACEHOLDER_RE.findall(rendered)
     if unresolved:
@@ -115,26 +145,14 @@ def render_template(
     return rendered
 
 
-def build_codex_command(
-    output_folder: Path,
-    *,
-    working_root: Path | None = None,
-) -> list[str]:
+def build_codex_command(run_dir: Path) -> list[str]:
     """Return the sandboxed Codex command used to consume the prompt on stdin."""
-    root = (working_root or Path.cwd()).resolve()
-    output = output_folder.resolve()
-    command = ["codex", "exec", "--sandbox", "workspace-write", "-C", str(root)]
-    try:
-        output.relative_to(root)
-    except ValueError:
-        command.extend(["--add-dir", str(output)])
-    command.append("-")
-    return command
+    return ["codex", "exec", "--sandbox", "workspace-write", "-C", str(run_dir.resolve()), "-"]
 
 
-def invoke_codex(prompt: str, *, output_folder: Path) -> None:
+def invoke_codex(prompt: str, *, run_dir: Path) -> None:
     """Invoke Codex with the rendered prompt via stdin."""
-    command = build_codex_command(output_folder)
+    command = build_codex_command(run_dir)
     try:
         completed = subprocess.run(
             command,
@@ -155,6 +173,24 @@ def invoke_codex(prompt: str, *, output_folder: Path) -> None:
         )
 
 
+def validate_generated_resume(run_dir: Path) -> Path:
+    """Return the temp new.tex path after confirming Codex produced a file."""
+    generated_resume = run_dir / TAILORED_RESUME_FILENAME
+    if not generated_resume.is_file():
+        raise CodexInvocationError(
+            f"Codex completed without producing {TAILORED_RESUME_FILENAME} in {run_dir}."
+        )
+    return generated_resume
+
+
+def copy_generated_resume(generated_resume: Path, output_folder: Path) -> Path:
+    """Copy temp new.tex to the deterministic final output path."""
+    output = ensure_output_folder(output_folder)
+    final_resume = output / TAILORED_RESUME_FILENAME
+    shutil.copyfile(generated_resume, final_resume)
+    return final_resume
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """Parse arguments, render the prompt, and invoke Codex."""
     parser = build_parser()
@@ -162,15 +198,17 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     try:
         original_resume = validate_resume_path(args.original_resume)
-        output_folder = ensure_output_folder(args.output_folder)
+        run_dir = create_run_workspace(original_resume)
         template = load_template()
         prompt = render_template(
             template,
-            original_resume=original_resume,
+            input_resume=ORIGINAL_RESUME_FILENAME,
             job_offers=args.job_offers,
-            output_folder=output_folder,
+            output_resume=TAILORED_RESUME_FILENAME,
         )
-        invoke_codex(prompt, output_folder=output_folder)
+        invoke_codex(prompt, run_dir=run_dir)
+        generated_resume = validate_generated_resume(run_dir)
+        copy_generated_resume(generated_resume, args.output_folder)
     except ValueError as exc:
         parser.error(str(exc))
     except CodexInvocationError as exc:
