@@ -9,12 +9,12 @@ from unittest import mock
 import make_my_resume_fit
 
 
-def valid_changes_payload():
+def valid_changes_payload(target_file="new.tex"):
     return {
         "schema_version": "1.0",
         "slug": "example-python-engineer",
         "summary": "Tailored the resume toward the supplied job offer.",
-        "target_files": ["new.tex"],
+        "target_files": [target_file],
         "warnings": [],
         "changes": [
             {
@@ -46,6 +46,8 @@ class ParserTests(unittest.TestCase):
                 "https://example.com/b",
                 "--output-folder",
                 "out",
+                "--output-name",
+                "tailored-resume",
             ]
         )
 
@@ -53,6 +55,7 @@ class ParserTests(unittest.TestCase):
             args.job_offers,
             ["https://example.com/a", "https://example.com/b"],
         )
+        self.assertEqual(args.output_name, "tailored-resume")
 
 
 class ValidationTests(unittest.TestCase):
@@ -89,6 +92,28 @@ class ValidationTests(unittest.TestCase):
             file_path.write_text("content", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "not a directory"):
                 make_my_resume_fit.ensure_output_folder(file_path)
+
+    def test_build_output_resume_filename_requires_stem_only(self):
+        self.assertEqual(
+            make_my_resume_fit.build_output_resume_filename("tailored-resume"),
+            "tailored-resume.tex",
+        )
+        self.assertEqual(
+            make_my_resume_fit.build_output_resume_filename("  My Resume  "),
+            "My Resume.tex",
+        )
+
+        invalid_names = [
+            ("", "must not be empty"),
+            ("resume.tex", "must not include a file extension"),
+            ("nested/resume", "must not contain path separators"),
+            (r"nested\\resume", "must not contain path separators"),
+            ("..", "directory reference"),
+        ]
+        for output_name, message in invalid_names:
+            with self.subTest(output_name=output_name):
+                with self.assertRaisesRegex(ValueError, message):
+                    make_my_resume_fit.build_output_resume_filename(output_name)
 
     def test_create_run_workspace_copies_resume_to_timestamped_temp_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -302,6 +327,23 @@ class CodexInvocationTests(unittest.TestCase):
             generated.write_text("% tailored", encoding="utf-8")
             self.assertEqual(make_my_resume_fit.validate_generated_resume(run_dir), generated)
 
+    def test_validate_generated_resume_uses_requested_output_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                "without producing tailored-resume.tex",
+            ):
+                make_my_resume_fit.validate_generated_resume(run_dir, "tailored-resume.tex")
+
+            generated = run_dir / "tailored-resume.tex"
+            generated.write_text("% tailored", encoding="utf-8")
+            self.assertEqual(
+                make_my_resume_fit.validate_generated_resume(run_dir, "tailored-resume.tex"),
+                generated,
+            )
+
     def test_validate_metadata_json_accepts_schema_matching_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             metadata_path = Path(tmp) / "metadata.json"
@@ -473,12 +515,12 @@ class RunTests(unittest.TestCase):
             resume.write_text("% resume", encoding="utf-8")
 
             def write_generated_resume(prompt, *, run_dir):
-                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                (run_dir / "tailored-resume.tex").write_text(
                     "% tailored",
                     encoding="utf-8",
                 )
                 (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
-                    json.dumps(valid_changes_payload()),
+                    json.dumps(valid_changes_payload("tailored-resume.tex")),
                     encoding="utf-8",
                 )
 
@@ -514,6 +556,8 @@ class RunTests(unittest.TestCase):
                         "https://example.com/a",
                         "--output-folder",
                         str(output),
+                        "--output-name",
+                        "tailored-resume",
                     ]
                 )
 
@@ -521,20 +565,23 @@ class RunTests(unittest.TestCase):
                 self.assertTrue(output.is_dir())
                 archive = output / "2026-07-18-v1-example-python-engineer"
                 self.assertTrue(archive.is_dir())
-                self.assertEqual((archive / "new.tex").read_text(encoding="utf-8"), "% tailored")
+                self.assertEqual(
+                    (archive / "tailored-resume.tex").read_text(encoding="utf-8"),
+                    "% tailored",
+                )
                 metadata_text = (archive / "metadata.json").read_text(encoding="utf-8")
                 self.assertEqual(
                     json.loads(metadata_text),
-                    valid_changes_payload(),
+                    valid_changes_payload("tailored-resume.tex"),
                 )
                 self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
-                self.assertFalse((output / "new.tex").exists())
+                self.assertFalse((output / "tailored-resume.tex").exists())
                 self.assertFalse((output / "metadata.json").exists())
                 run_dir = invoke.call_args.kwargs["run_dir"]
                 self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 prompt = invoke.call_args.args[0]
                 self.assertIn("orig.tex", prompt)
-                self.assertIn("new.tex", prompt)
+                self.assertIn("tailored-resume.tex", prompt)
                 self.assertIn("- https://example.com/a", prompt)
                 self.assertNotIn(str(resume.resolve()), prompt)
                 self.assertNotIn(str(output.resolve()), prompt)
@@ -549,7 +596,7 @@ class RunTests(unittest.TestCase):
             resume.write_text("% resume", encoding="utf-8")
 
             def write_generated_resume(prompt, *, run_dir):
-                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                (run_dir / "tailored-resume.tex").write_text(
                     "% tailored",
                     encoding="utf-8",
                 )
@@ -578,6 +625,8 @@ class RunTests(unittest.TestCase):
                         "https://example.com/a",
                         "--output-folder",
                         str(output),
+                        "--output-name",
+                        "tailored-resume",
                     ]
                 )
 
@@ -592,7 +641,7 @@ class RunTests(unittest.TestCase):
             resume.write_text("% resume", encoding="utf-8")
 
             def write_malformed_outputs(prompt, *, run_dir):
-                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                (run_dir / "tailored-resume.tex").write_text(
                     "% tailored",
                     encoding="utf-8",
                 )
@@ -625,6 +674,8 @@ class RunTests(unittest.TestCase):
                         "https://example.com/a",
                         "--output-folder",
                         str(output),
+                        "--output-name",
+                        "tailored-resume",
                     ]
                 )
 
@@ -639,7 +690,7 @@ class RunTests(unittest.TestCase):
             resume.write_text("% resume", encoding="utf-8")
 
             def write_invalid_outputs(prompt, *, run_dir):
-                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                (run_dir / "tailored-resume.tex").write_text(
                     "% tailored",
                     encoding="utf-8",
                 )
@@ -672,6 +723,8 @@ class RunTests(unittest.TestCase):
                         "https://example.com/a",
                         "--output-folder",
                         str(output),
+                        "--output-name",
+                        "tailored-resume",
                     ]
                 )
 
@@ -706,6 +759,8 @@ class RunTests(unittest.TestCase):
                         "https://example.com/a",
                         "--output-folder",
                         str(output),
+                        "--output-name",
+                        "tailored-resume",
                     ]
                 )
 
@@ -722,12 +777,12 @@ class RunTests(unittest.TestCase):
             output.write_text("not a directory", encoding="utf-8")
 
             def write_generated_resume(prompt, *, run_dir):
-                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                (run_dir / "tailored-resume.tex").write_text(
                     "% tailored",
                     encoding="utf-8",
                 )
                 (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
-                    json.dumps(valid_changes_payload()),
+                    json.dumps(valid_changes_payload("tailored-resume.tex")),
                     encoding="utf-8",
                 )
 
@@ -756,6 +811,8 @@ class RunTests(unittest.TestCase):
                             "https://example.com/a",
                             "--output-folder",
                             str(output),
+                            "--output-name",
+                            "tailored-resume",
                         ]
                     )
 

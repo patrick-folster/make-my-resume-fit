@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -43,7 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  python make_my_resume_fit.py --original-resume resume.tex \\\n"
             "    --job-offer https://example.com/a \\\n"
             "    --job-offer https://example.com/b \\\n"
-            "    --output-folder out/resume-fit\n\n"
+            "    --output-folder out/resume-fit \\\n"
+            "    --output-name tailored-resume\n\n"
             "Pass multiple job offers by repeating --job-offer once per URL."
         ),
     )
@@ -66,6 +68,14 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         help="Folder where the wrapper should copy the tailored resume output.",
+    )
+    parser.add_argument(
+        "--output-name",
+        required=True,
+        help=(
+            "Name for the tailored LaTeX file, without a path or extension. "
+            "The wrapper writes <name>.tex."
+        ),
     )
     return parser
 
@@ -90,6 +100,20 @@ def ensure_output_folder(path: Path) -> Path:
     except OSError as exc:
         raise ValueError(f"could not create output folder {path}: {exc}") from exc
     return path.resolve()
+
+
+def build_output_resume_filename(output_name: str) -> str:
+    """Return the temp-local .tex filename for a validated output stem."""
+    name = output_name.strip()
+    if not name:
+        raise ValueError("output name must not be empty")
+    if name in {".", ".."}:
+        raise ValueError("output name must be a filename, not a directory reference")
+    if any(separator and separator in name for separator in {os.sep, os.altsep, "/", "\\"}):
+        raise ValueError("output name must not contain path separators")
+    if Path(name).suffix:
+        raise ValueError("output name must not include a file extension")
+    return f"{name}.tex"
 
 
 def create_run_workspace(
@@ -194,12 +218,15 @@ def invoke_codex(prompt: str, *, run_dir: Path) -> None:
         )
 
 
-def validate_generated_resume(run_dir: Path) -> Path:
-    """Return the temp new.tex path after confirming Codex produced a file."""
-    generated_resume = run_dir / TAILORED_RESUME_FILENAME
+def validate_generated_resume(
+    run_dir: Path,
+    output_resume: str = TAILORED_RESUME_FILENAME,
+) -> Path:
+    """Return the temp output resume path after confirming Codex produced it."""
+    generated_resume = run_dir / output_resume
     if not generated_resume.is_file():
         raise CodexInvocationError(
-            f"Codex completed without producing {TAILORED_RESUME_FILENAME} in {run_dir}."
+            f"Codex completed without producing {output_resume} in {run_dir}."
         )
     return generated_resume
 
@@ -369,7 +396,7 @@ def copy_final_artifacts(
         current_date=current_date,
     )
     try:
-        shutil.copyfile(generated_resume, archive_dir / TAILORED_RESUME_FILENAME)
+        shutil.copyfile(generated_resume, archive_dir / generated_resume.name)
         (archive_dir / METADATA_FILENAME).write_text(
             json.dumps(metadata, indent=2) + "\n",
             encoding="utf-8",
@@ -387,16 +414,17 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     try:
         original_resume = validate_resume_path(args.original_resume)
+        output_resume = build_output_resume_filename(args.output_name)
         run_dir = create_run_workspace(original_resume)
         template = load_template()
         prompt = render_template(
             template,
             input_resume=ORIGINAL_RESUME_FILENAME,
             job_offers=args.job_offers,
-            output_resume=TAILORED_RESUME_FILENAME,
+            output_resume=output_resume,
         )
         invoke_codex(prompt, run_dir=run_dir)
-        generated_resume = validate_generated_resume(run_dir)
+        generated_resume = validate_generated_resume(run_dir, output_resume)
         metadata = validate_metadata_json(run_dir / METADATA_FILENAME)
         copy_final_artifacts(generated_resume, metadata, args.output_folder)
     except ValueError as exc:
