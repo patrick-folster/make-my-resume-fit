@@ -2,6 +2,12 @@
 
 Use the supplied original resume, job offer URLs, and output folder exactly as provided.
 
+You are already running inside the Codex process launched by this repository's
+CLI wrapper. Do not run `make_my_resume_fit.py`, `make-my-resume-fit`, `codex`,
+or any command that launches another Codex process. Read the original resume
+directly and write the tailored LaTeX output directly under the supplied output
+folder.
+
 Original resume path:
 {{ORIGINAL_RESUME}}
 

@@ -115,17 +115,21 @@ def render_template(
     return rendered
 
 
-def build_codex_command(output_folder: Path) -> list[str]:
+def build_codex_command(
+    output_folder: Path,
+    *,
+    working_root: Path | None = None,
+) -> list[str]:
     """Return the sandboxed Codex command used to consume the prompt on stdin."""
-    return [
-        "codex",
-        "exec",
-        "--sandbox",
-        "workspace-write",
-        "--add-dir",
-        str(output_folder),
-        "-",
-    ]
+    root = (working_root or Path.cwd()).resolve()
+    output = output_folder.resolve()
+    command = ["codex", "exec", "--sandbox", "workspace-write", "-C", str(root)]
+    try:
+        output.relative_to(root)
+    except ValueError:
+        command.extend(["--add-dir", str(output)])
+    command.append("-")
+    return command
 
 
 def invoke_codex(prompt: str, *, output_folder: Path) -> None:

@@ -19,10 +19,11 @@ an existing `.tex` file, creates the output folder when needed, renders the
 template without unresolved `{{PLACEHOLDER}}` markers, and invokes:
 
 ```bash
-codex exec --sandbox workspace-write --add-dir <output-folder> -
+codex exec --sandbox workspace-write -C <working-root> -
 ```
 
-The rendered prompt is passed to Codex on standard input.
+The rendered prompt is passed to Codex on standard input. If the output folder
+is outside the working root, the script also passes `--add-dir <output-folder>`.
 
 When installed as a package, the CLI entry point is:
 

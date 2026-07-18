@@ -92,14 +92,36 @@ class RenderingTests(unittest.TestCase):
 
 
 class CodexInvocationTests(unittest.TestCase):
-    def test_build_codex_command_is_stable(self):
+    def test_build_codex_command_sandboxes_project_local_output(self):
         self.assertEqual(
-            make_my_resume_fit.build_codex_command(Path("/tmp/out")),
+            make_my_resume_fit.build_codex_command(
+                Path("/tmp/project/out"),
+                working_root=Path("/tmp/project"),
+            ),
             [
                 "codex",
                 "exec",
                 "--sandbox",
                 "workspace-write",
+                "-C",
+                "/tmp/project",
+                "-",
+            ],
+        )
+
+    def test_build_codex_command_adds_external_output_folder(self):
+        self.assertEqual(
+            make_my_resume_fit.build_codex_command(
+                Path("/tmp/out"),
+                working_root=Path("/tmp/project"),
+            ),
+            [
+                "codex",
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "-C",
+                "/tmp/project",
                 "--add-dir",
                 "/tmp/out",
                 "-",
@@ -109,11 +131,11 @@ class CodexInvocationTests(unittest.TestCase):
     def test_invoke_codex_passes_prompt_on_stdin(self):
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
-                args=make_my_resume_fit.build_codex_command(Path("/tmp/out")),
+                args=make_my_resume_fit.build_codex_command(Path.cwd() / "out"),
                 returncode=0,
             )
 
-            make_my_resume_fit.invoke_codex("rendered prompt", output_folder=Path("/tmp/out"))
+            make_my_resume_fit.invoke_codex("rendered prompt", output_folder=Path.cwd() / "out")
 
         run.assert_called_once_with(
             [
@@ -121,8 +143,8 @@ class CodexInvocationTests(unittest.TestCase):
                 "exec",
                 "--sandbox",
                 "workspace-write",
-                "--add-dir",
-                "/tmp/out",
+                "-C",
+                str(Path.cwd()),
                 "-",
             ],
             input="rendered prompt",
