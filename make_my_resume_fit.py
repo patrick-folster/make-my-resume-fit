@@ -147,7 +147,16 @@ def render_template(
 
 def build_codex_command(run_dir: Path) -> list[str]:
     """Return the sandboxed Codex command used to consume the prompt on stdin."""
-    return ["codex", "exec", "--sandbox", "workspace-write", "-C", str(run_dir.resolve()), "-"]
+    return [
+        "codex",
+        "exec",
+        "--sandbox",
+        "workspace-write",
+        "--skip-git-repo-check",
+        "-C",
+        str(run_dir.resolve()),
+        "-",
+    ]
 
 
 def invoke_codex(prompt: str, *, run_dir: Path) -> None:

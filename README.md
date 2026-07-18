@@ -21,7 +21,7 @@ the system temp folder, copies the validated resume into that directory as
 and invokes:
 
 ```bash
-codex exec --sandbox workspace-write -C <temp-run-directory> -
+codex exec --sandbox workspace-write --skip-git-repo-check -C <temp-run-directory> -
 ```
 
 The rendered prompt is passed to Codex on standard input. Codex is instructed to
