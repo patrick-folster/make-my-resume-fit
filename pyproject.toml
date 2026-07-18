@@ -1,0 +1,9 @@
+[project]
+name = "make-my-resume-fit"
+version = "0.1.0"
+description = "Minimal CLI for rendering a resume-fitting Codex prompt."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+make-my-resume-fit = "make_my_resume_fit:main"
