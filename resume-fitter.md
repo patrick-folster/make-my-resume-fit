@@ -22,6 +22,23 @@ Optimize the LaTeX resume for the supplied job offers. Keep the output in
 LaTeX format, preserve truthful experience and qualifications, and write the
 complete optimized resume to the required output file.
 
+Your file output and final response are separate:
+
+- Write the complete tailored LaTeX resume to `{{OUTPUT_RESUME}}`.
+- Return only JSON in your final assistant response. The JSON must conform to
+  the provided output schema. Do not wrap it in Markdown fences or add prose
+  before or after the JSON.
+
+The final JSON is an audit trail for meaningful resume changes. Use
+`schema_version` value `"1.0"`, include `{{OUTPUT_RESUME}}` in `target_files`,
+and report substantive edits in `changes`. Each change must include a stable
+id, resume section, location hint, change type, practical before and after
+snippets, the job-alignment reason, evidence from the source resume or fetched
+job descriptions, and any truthfulness or evidence risk. Omit punctuation-only,
+format-only, or whitespace-only changes. Use `warnings` for unfetched job URLs,
+missing evidence, or claims that should not be strengthened without human
+review.
+
 Fetch and read every supplied job offer URL before tailoring the resume. Base
 the optimization on the fetched job descriptions, requirements, responsibilities,
 and terminology. If shell commands such as `curl` cannot resolve or access a

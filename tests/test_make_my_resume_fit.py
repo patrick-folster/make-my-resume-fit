@@ -1,4 +1,5 @@
 import datetime as dt
+import json
 import subprocess
 import tempfile
 import unittest
@@ -6,6 +7,28 @@ from pathlib import Path
 from unittest import mock
 
 import make_my_resume_fit
+
+
+def valid_changes_payload():
+    return {
+        "schema_version": "1.0",
+        "summary": "Tailored the resume toward the supplied job offer.",
+        "target_files": ["new.tex"],
+        "changes": [
+            {
+                "id": "change-001",
+                "section": "Experience",
+                "location_hint": "First role bullet list",
+                "change_type": "rewrite",
+                "before": "Built internal tools.",
+                "after": "Built Python automation tools for operations teams.",
+                "reason": "Aligns the resume with the posting's Python automation requirement.",
+                "evidence": "Source resume mentions internal tools; job posting mentions Python.",
+                "truthfulness_risk": "Low; does not add unsupported employers or credentials.",
+            }
+        ],
+        "warnings": [],
+    }
 
 
 class ParserTests(unittest.TestCase):
@@ -168,9 +191,23 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("use the available live search or browser tools", rendered)
         self.assertNotIn("Do not fetch or validate", rendered)
 
+    def test_rendered_prompt_separates_resume_file_from_final_json_response(self):
+        rendered = make_my_resume_fit.render_template(
+            make_my_resume_fit.load_template(),
+            input_resume="orig.tex",
+            job_offers=["https://example.com/a"],
+            output_resume="new.tex",
+        )
+
+        self.assertIn("Write the complete tailored LaTeX resume to `new.tex`", rendered)
+        self.assertIn("Return only JSON in your final assistant response", rendered)
+        self.assertIn("truthfulness or evidence risk", rendered)
+        self.assertIn("Omit punctuation-only", rendered)
+
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_sandboxes_temp_run_dir_only(self):
+        schema = str(make_my_resume_fit.CHANGE_SCHEMA_PATH.resolve())
         self.assertEqual(
             make_my_resume_fit.build_codex_command(Path("/tmp/run")),
             [
@@ -184,6 +221,10 @@ class CodexInvocationTests(unittest.TestCase):
                 "--skip-git-repo-check",
                 "-C",
                 "/tmp/run",
+                "--output-schema",
+                schema,
+                "-o",
+                "/tmp/run/changes.json",
                 "-",
             ],
         )
@@ -197,6 +238,7 @@ class CodexInvocationTests(unittest.TestCase):
         self.assertNotIn("--add-dir", command)
 
     def test_invoke_codex_passes_prompt_on_stdin(self):
+        schema = str(make_my_resume_fit.CHANGE_SCHEMA_PATH.resolve())
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
                 args=make_my_resume_fit.build_codex_command(Path("/tmp/run")),
@@ -217,6 +259,10 @@ class CodexInvocationTests(unittest.TestCase):
                 "--skip-git-repo-check",
                 "-C",
                 "/tmp/run",
+                "--output-schema",
+                schema,
+                "-o",
+                "/tmp/run/changes.json",
                 "-",
             ],
             input="rendered prompt",
@@ -253,6 +299,62 @@ class CodexInvocationTests(unittest.TestCase):
             generated.write_text("% tailored", encoding="utf-8")
             self.assertEqual(make_my_resume_fit.validate_generated_resume(run_dir), generated)
 
+    def test_validate_changes_json_accepts_schema_matching_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changes_path = Path(tmp) / "changes.json"
+            changes_path.write_text(
+                json.dumps(valid_changes_payload()),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                make_my_resume_fit.validate_changes_json(changes_path),
+                valid_changes_payload(),
+            )
+
+    def test_validate_changes_json_requires_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                "structured output changes.json",
+            ):
+                make_my_resume_fit.validate_changes_json(Path(tmp) / "changes.json")
+
+    def test_validate_changes_json_rejects_empty_or_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changes_path = Path(tmp) / "changes.json"
+
+            changes_path.write_text("   \n", encoding="utf-8")
+            with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "empty"):
+                make_my_resume_fit.validate_changes_json(changes_path)
+
+            changes_path.write_text("{not json", encoding="utf-8")
+            with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "malformed JSON"):
+                make_my_resume_fit.validate_changes_json(changes_path)
+
+    def test_validate_changes_json_rejects_schema_violations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changes_path = Path(tmp) / "changes.json"
+            payload = valid_changes_payload()
+            del payload["changes"][0]["truthfulness_risk"]
+            changes_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                "does not match schema",
+            ):
+                make_my_resume_fit.validate_changes_json(changes_path)
+
+            payload = valid_changes_payload()
+            payload["warnings"] = "none"
+            changes_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                r"\$\.warnings must be an array",
+            ):
+                make_my_resume_fit.validate_changes_json(changes_path)
+
 
 class RunTests(unittest.TestCase):
     def test_run_validates_renders_invokes_and_copies_new_tex(self):
@@ -265,6 +367,10 @@ class RunTests(unittest.TestCase):
             def write_generated_resume(prompt, *, run_dir):
                 (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
                     "% tailored",
+                    encoding="utf-8",
+                )
+                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                    json.dumps(valid_changes_payload()),
                     encoding="utf-8",
                 )
 
@@ -298,6 +404,10 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(exit_code, 0)
                 self.assertTrue(output.is_dir())
                 self.assertEqual((output / "new.tex").read_text(encoding="utf-8"), "% tailored")
+                self.assertEqual(
+                    json.loads((output / "changes.json").read_text(encoding="utf-8")),
+                    valid_changes_payload(),
+                )
                 run_dir = invoke.call_args.kwargs["run_dir"]
                 self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 prompt = invoke.call_args.args[0]
@@ -308,6 +418,96 @@ class RunTests(unittest.TestCase):
                 self.assertNotIn(str(output.resolve()), prompt)
                 invoke.assert_called_once()
                 self.assertEqual(invoke.call_args.kwargs["run_dir"], run_dir)
+
+    def test_run_reports_missing_changes_json_after_successful_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            output = root / "out"
+            resume.write_text("% resume", encoding="utf-8")
+
+            def write_generated_resume(prompt, *, run_dir):
+                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                    "% tailored",
+                    encoding="utf-8",
+                )
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch(
+                "make_my_resume_fit.invoke_codex",
+                side_effect=write_generated_resume,
+            ):
+                exit_code = make_my_resume_fit.run(
+                    [
+                        "--original-resume",
+                        str(resume),
+                        "--job-offer",
+                        "https://example.com/a",
+                        "--output-folder",
+                        str(output),
+                    ]
+                )
+
+                self.assertEqual(exit_code, 1)
+                self.assertFalse(output.exists())
+
+    def test_run_reports_invalid_changes_json_after_successful_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume = root / "resume.tex"
+            output = root / "out"
+            resume.write_text("% resume", encoding="utf-8")
+
+            def write_invalid_outputs(prompt, *, run_dir):
+                (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
+                    "% tailored",
+                    encoding="utf-8",
+                )
+                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                    '{"schema_version": "1.0"}',
+                    encoding="utf-8",
+                )
+
+            create_run_workspace = make_my_resume_fit.create_run_workspace
+
+            def create_test_workspace(original_resume):
+                return create_run_workspace(
+                    original_resume,
+                    temp_root=root / "runs",
+                    timestamp=dt.datetime(2026, 7, 18, 12, 34, 56, 123456),
+                )
+
+            with mock.patch(
+                "make_my_resume_fit.create_run_workspace",
+                side_effect=create_test_workspace,
+            ), mock.patch(
+                "make_my_resume_fit.invoke_codex",
+                side_effect=write_invalid_outputs,
+            ):
+                exit_code = make_my_resume_fit.run(
+                    [
+                        "--original-resume",
+                        str(resume),
+                        "--job-offer",
+                        "https://example.com/a",
+                        "--output-folder",
+                        str(output),
+                    ]
+                )
+
+                self.assertEqual(exit_code, 1)
+                self.assertFalse(output.exists())
 
     def test_run_reports_missing_new_tex_after_successful_codex(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -355,6 +555,10 @@ class RunTests(unittest.TestCase):
             def write_generated_resume(prompt, *, run_dir):
                 (run_dir / make_my_resume_fit.TAILORED_RESUME_FILENAME).write_text(
                     "% tailored",
+                    encoding="utf-8",
+                )
+                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                    json.dumps(valid_changes_payload()),
                     encoding="utf-8",
                 )
 

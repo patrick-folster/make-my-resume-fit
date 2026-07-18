@@ -20,3 +20,15 @@
 - The deterministic optimized resume filename is `new.tex`. Codex writes it in
   the temp run directory, and the wrapper copies it to `--output-folder/new.tex`,
   overwriting that final file when it already exists.
+
+## 0004 Structured Change Tracking
+
+- Codex is invoked with `--output-schema schemas/changes.schema.json` and
+  `-o <temp-run-directory>/changes.json` so the tailored resume and audit trail
+  are both produced inside the isolated temp workspace before publication.
+- The wrapper validates the captured final response with standard-library JSON
+  parsing plus a focused validator for the repository-owned schema subset,
+  avoiding a runtime dependency for this narrow contract.
+- Final artifacts are published only after both `new.tex` and structured
+  `changes.json` validate, preventing partial successful output in the requested
+  output folder.
