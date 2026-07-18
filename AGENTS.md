@@ -14,6 +14,7 @@
 - Do not create, switch, or rename git branches unless the user explicitly asks for branch operations.
 - Use repository-relative paths in docs and instructions.
 - Write well-commented code that explains non-obvious logic so future human and AI maintainers can understand it.
+- Add or update tests for behavioral changes, including edge cases and failure paths that are practical to exercise.
 - Keep `.cyclestone/DECISIONS.md` as chronological project history; do not merge it wholesale into `AGENTS.md`.
 
 ## CLI Invariants
