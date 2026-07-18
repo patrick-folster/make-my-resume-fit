@@ -15,10 +15,10 @@ from typing import Any, Sequence
 
 
 TEMPLATE_PATH = Path(__file__).with_name("resume-fitter.md")
-CHANGE_SCHEMA_PATH = Path(__file__).with_name("schemas") / "changes.schema.json"
+METADATA_SCHEMA_PATH = Path(__file__).with_name("schemas") / "metadata.schema.json"
 ORIGINAL_RESUME_FILENAME = "orig.tex"
 TAILORED_RESUME_FILENAME = "new.tex"
-CHANGES_FILENAME = "changes.json"
+METADATA_FILENAME = "metadata.json"
 RUN_DIR_PREFIX = "make-my-resume-fit-"
 PLACEHOLDERS = {
     "input_resume": "{{INPUT_RESUME}}",
@@ -163,9 +163,9 @@ def build_codex_command(run_dir: Path) -> list[str]:
         "-C",
         str(resolved_run_dir),
         "--output-schema",
-        str(CHANGE_SCHEMA_PATH.resolve()),
+        str(METADATA_SCHEMA_PATH.resolve()),
         "-o",
-        str(resolved_run_dir / CHANGES_FILENAME),
+        str(resolved_run_dir / METADATA_FILENAME),
         "-",
     ]
 
@@ -203,16 +203,16 @@ def validate_generated_resume(run_dir: Path) -> Path:
     return generated_resume
 
 
-def load_change_schema(path: Path = CHANGE_SCHEMA_PATH) -> dict[str, Any]:
-    """Load the repository-owned audit-trail schema used for local validation."""
+def load_metadata_schema(path: Path = METADATA_SCHEMA_PATH) -> dict[str, Any]:
+    """Load the repository-owned metadata schema used for local validation."""
     try:
         schema = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise CodexInvocationError(f"change schema file not found: {path}") from exc
+        raise CodexInvocationError(f"metadata schema file not found: {path}") from exc
     except json.JSONDecodeError as exc:
-        raise CodexInvocationError(f"change schema file is malformed JSON: {exc}") from exc
+        raise CodexInvocationError(f"metadata schema file is malformed JSON: {exc}") from exc
     if not isinstance(schema, dict):
-        raise CodexInvocationError("change schema file must contain a JSON object.")
+        raise CodexInvocationError("metadata schema file must contain a JSON object.")
     return schema
 
 
@@ -233,7 +233,7 @@ def _type_name(value: Any) -> str:
 
 
 def _validate_schema_subset(value: Any, schema: dict[str, Any], path: str) -> list[str]:
-    """Validate the focused JSON Schema subset used by schemas/changes.schema.json."""
+    """Validate the focused JSON Schema subset used by schemas/metadata.schema.json."""
     errors: list[str] = []
     expected_type = schema.get("type")
     if expected_type == "object":
@@ -267,42 +267,48 @@ def _validate_schema_subset(value: Any, schema: dict[str, Any], path: str) -> li
                 errors.extend(_validate_schema_subset(item, item_schema, f"{path}[{index}]"))
         return errors
 
-    if expected_type == "string" and not isinstance(value, str):
-        return [f"{path} must be a string, got {_type_name(value)}"]
+    if expected_type == "string":
+        if not isinstance(value, str):
+            return [f"{path} must be a string, got {_type_name(value)}"]
+
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.fullmatch(pattern, value) is None:
+            errors.append(f"{path} must match pattern {pattern}")
+        return errors
 
     return errors
 
 
-def validate_changes_json(
-    changes_path: Path,
-    schema_path: Path = CHANGE_SCHEMA_PATH,
+def validate_metadata_json(
+    metadata_path: Path,
+    schema_path: Path = METADATA_SCHEMA_PATH,
 ) -> dict[str, Any]:
-    """Return parsed changes.json after checking presence, JSON syntax, and schema shape."""
-    if not changes_path.is_file():
+    """Return parsed metadata.json after checking presence, JSON syntax, and schema shape."""
+    if not metadata_path.is_file():
         raise CodexInvocationError(
-            f"Codex completed without producing structured output {CHANGES_FILENAME}."
+            f"Codex completed without producing structured output {METADATA_FILENAME}."
         )
 
-    raw_changes = changes_path.read_text(encoding="utf-8")
-    if not raw_changes.strip():
-        raise CodexInvocationError(f"Codex produced empty structured output {CHANGES_FILENAME}.")
+    raw_metadata = metadata_path.read_text(encoding="utf-8")
+    if not raw_metadata.strip():
+        raise CodexInvocationError(f"Codex produced empty structured output {METADATA_FILENAME}.")
 
     try:
-        changes = json.loads(raw_changes)
+        metadata = json.loads(raw_metadata)
     except json.JSONDecodeError as exc:
         raise CodexInvocationError(
-            f"Codex produced malformed JSON in {CHANGES_FILENAME}: {exc}"
+            f"Codex produced malformed JSON in {METADATA_FILENAME}: {exc}"
         ) from exc
 
-    schema = load_change_schema(schema_path)
-    errors = _validate_schema_subset(changes, schema, "$")
+    schema = load_metadata_schema(schema_path)
+    errors = _validate_schema_subset(metadata, schema, "$")
     if errors:
         joined = "; ".join(errors)
         raise CodexInvocationError(
-            f"Codex structured output {CHANGES_FILENAME} does not match schema: {joined}"
+            f"Codex structured output {METADATA_FILENAME} does not match schema: {joined}"
         )
 
-    return changes
+    return metadata
 
 
 def copy_generated_resume(generated_resume: Path, output_folder: Path) -> Path:
@@ -315,14 +321,14 @@ def copy_generated_resume(generated_resume: Path, output_folder: Path) -> Path:
 
 def copy_final_artifacts(
     generated_resume: Path,
-    changes: dict[str, Any],
+    metadata: dict[str, Any],
     output_folder: Path,
 ) -> None:
     """Publish validated temp artifacts to the user-requested output folder."""
     output = ensure_output_folder(output_folder)
     shutil.copyfile(generated_resume, output / TAILORED_RESUME_FILENAME)
-    (output / CHANGES_FILENAME).write_text(
-        json.dumps(changes, indent=2, sort_keys=True) + "\n",
+    (output / METADATA_FILENAME).write_text(
+        json.dumps(metadata, indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -344,8 +350,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         )
         invoke_codex(prompt, run_dir=run_dir)
         generated_resume = validate_generated_resume(run_dir)
-        changes = validate_changes_json(run_dir / CHANGES_FILENAME)
-        copy_final_artifacts(generated_resume, changes, args.output_folder)
+        metadata = validate_metadata_json(run_dir / METADATA_FILENAME)
+        copy_final_artifacts(generated_resume, metadata, args.output_folder)
     except ValueError as exc:
         parser.error(str(exc))
     except CodexInvocationError as exc:

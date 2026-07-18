@@ -12,8 +12,10 @@ import make_my_resume_fit
 def valid_changes_payload():
     return {
         "schema_version": "1.0",
+        "slug": "example-python-engineer",
         "summary": "Tailored the resume toward the supplied job offer.",
         "target_files": ["new.tex"],
+        "warnings": [],
         "changes": [
             {
                 "id": "change-001",
@@ -27,7 +29,6 @@ def valid_changes_payload():
                 "truthfulness_risk": "Low; does not add unsupported employers or credentials.",
             }
         ],
-        "warnings": [],
     }
 
 
@@ -201,13 +202,15 @@ class RenderingTests(unittest.TestCase):
 
         self.assertIn("Write the complete tailored LaTeX resume to `new.tex`", rendered)
         self.assertIn("Return only JSON in your final assistant response", rendered)
+        self.assertIn("lowercase hyphenated `slug`", rendered)
+        self.assertIn("Keep `changes` as the final top-level JSON property", rendered)
         self.assertIn("truthfulness or evidence risk", rendered)
-        self.assertIn("Omit punctuation-only", rendered)
+        self.assertIn("punctuation-only", rendered)
 
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_sandboxes_temp_run_dir_only(self):
-        schema = str(make_my_resume_fit.CHANGE_SCHEMA_PATH.resolve())
+        schema = str(make_my_resume_fit.METADATA_SCHEMA_PATH.resolve())
         self.assertEqual(
             make_my_resume_fit.build_codex_command(Path("/tmp/run")),
             [
@@ -224,7 +227,7 @@ class CodexInvocationTests(unittest.TestCase):
                 "--output-schema",
                 schema,
                 "-o",
-                "/tmp/run/changes.json",
+                "/tmp/run/metadata.json",
                 "-",
             ],
         )
@@ -238,7 +241,7 @@ class CodexInvocationTests(unittest.TestCase):
         self.assertNotIn("--add-dir", command)
 
     def test_invoke_codex_passes_prompt_on_stdin(self):
-        schema = str(make_my_resume_fit.CHANGE_SCHEMA_PATH.resolve())
+        schema = str(make_my_resume_fit.METADATA_SCHEMA_PATH.resolve())
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
                 args=make_my_resume_fit.build_codex_command(Path("/tmp/run")),
@@ -262,7 +265,7 @@ class CodexInvocationTests(unittest.TestCase):
                 "--output-schema",
                 schema,
                 "-o",
-                "/tmp/run/changes.json",
+                "/tmp/run/metadata.json",
                 "-",
             ],
             input="rendered prompt",
@@ -299,61 +302,87 @@ class CodexInvocationTests(unittest.TestCase):
             generated.write_text("% tailored", encoding="utf-8")
             self.assertEqual(make_my_resume_fit.validate_generated_resume(run_dir), generated)
 
-    def test_validate_changes_json_accepts_schema_matching_output(self):
+    def test_validate_metadata_json_accepts_schema_matching_output(self):
         with tempfile.TemporaryDirectory() as tmp:
-            changes_path = Path(tmp) / "changes.json"
-            changes_path.write_text(
+            metadata_path = Path(tmp) / "metadata.json"
+            metadata_path.write_text(
                 json.dumps(valid_changes_payload()),
                 encoding="utf-8",
             )
 
             self.assertEqual(
-                make_my_resume_fit.validate_changes_json(changes_path),
+                make_my_resume_fit.validate_metadata_json(metadata_path),
                 valid_changes_payload(),
             )
 
-    def test_validate_changes_json_requires_file(self):
+    def test_validate_metadata_json_requires_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(
                 make_my_resume_fit.CodexInvocationError,
-                "structured output changes.json",
+                "structured output metadata.json",
             ):
-                make_my_resume_fit.validate_changes_json(Path(tmp) / "changes.json")
+                make_my_resume_fit.validate_metadata_json(Path(tmp) / "metadata.json")
 
-    def test_validate_changes_json_rejects_empty_or_malformed_json(self):
+    def test_validate_metadata_json_rejects_empty_or_malformed_json(self):
         with tempfile.TemporaryDirectory() as tmp:
-            changes_path = Path(tmp) / "changes.json"
+            metadata_path = Path(tmp) / "metadata.json"
 
-            changes_path.write_text("   \n", encoding="utf-8")
+            metadata_path.write_text("   \n", encoding="utf-8")
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "empty"):
-                make_my_resume_fit.validate_changes_json(changes_path)
+                make_my_resume_fit.validate_metadata_json(metadata_path)
 
-            changes_path.write_text("{not json", encoding="utf-8")
+            metadata_path.write_text("{not json", encoding="utf-8")
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "malformed JSON"):
-                make_my_resume_fit.validate_changes_json(changes_path)
+                make_my_resume_fit.validate_metadata_json(metadata_path)
 
-    def test_validate_changes_json_rejects_schema_violations(self):
+    def test_validate_metadata_json_rejects_schema_violations(self):
         with tempfile.TemporaryDirectory() as tmp:
-            changes_path = Path(tmp) / "changes.json"
+            metadata_path = Path(tmp) / "metadata.json"
             payload = valid_changes_payload()
             del payload["changes"][0]["truthfulness_risk"]
-            changes_path.write_text(json.dumps(payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(payload), encoding="utf-8")
 
             with self.assertRaisesRegex(
                 make_my_resume_fit.CodexInvocationError,
                 "does not match schema",
             ):
-                make_my_resume_fit.validate_changes_json(changes_path)
+                make_my_resume_fit.validate_metadata_json(metadata_path)
 
             payload = valid_changes_payload()
             payload["warnings"] = "none"
-            changes_path.write_text(json.dumps(payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(payload), encoding="utf-8")
 
             with self.assertRaisesRegex(
                 make_my_resume_fit.CodexInvocationError,
                 r"\$\.warnings must be an array",
             ):
-                make_my_resume_fit.validate_changes_json(changes_path)
+                make_my_resume_fit.validate_metadata_json(metadata_path)
+
+    def test_validate_metadata_json_requires_slug(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metadata_path = Path(tmp) / "metadata.json"
+            payload = valid_changes_payload()
+            del payload["slug"]
+            metadata_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                r"\$\.slug is required",
+            ):
+                make_my_resume_fit.validate_metadata_json(metadata_path)
+
+    def test_validate_metadata_json_rejects_non_slug_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metadata_path = Path(tmp) / "metadata.json"
+            payload = valid_changes_payload()
+            payload["slug"] = "Example Python Engineer"
+            metadata_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                r"\$\.slug must match pattern",
+            ):
+                make_my_resume_fit.validate_metadata_json(metadata_path)
 
 
 class RunTests(unittest.TestCase):
@@ -369,7 +398,7 @@ class RunTests(unittest.TestCase):
                     "% tailored",
                     encoding="utf-8",
                 )
-                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
                     json.dumps(valid_changes_payload()),
                     encoding="utf-8",
                 )
@@ -404,10 +433,12 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(exit_code, 0)
                 self.assertTrue(output.is_dir())
                 self.assertEqual((output / "new.tex").read_text(encoding="utf-8"), "% tailored")
+                metadata_text = (output / "metadata.json").read_text(encoding="utf-8")
                 self.assertEqual(
-                    json.loads((output / "changes.json").read_text(encoding="utf-8")),
+                    json.loads(metadata_text),
                     valid_changes_payload(),
                 )
+                self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
                 run_dir = invoke.call_args.kwargs["run_dir"]
                 self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 prompt = invoke.call_args.args[0]
@@ -419,7 +450,7 @@ class RunTests(unittest.TestCase):
                 invoke.assert_called_once()
                 self.assertEqual(invoke.call_args.kwargs["run_dir"], run_dir)
 
-    def test_run_reports_missing_changes_json_after_successful_codex(self):
+    def test_run_reports_missing_metadata_json_after_successful_codex(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             resume = root / "resume.tex"
@@ -462,7 +493,7 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(exit_code, 1)
                 self.assertFalse(output.exists())
 
-    def test_run_reports_invalid_changes_json_after_successful_codex(self):
+    def test_run_reports_invalid_metadata_json_after_successful_codex(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             resume = root / "resume.tex"
@@ -474,7 +505,7 @@ class RunTests(unittest.TestCase):
                     "% tailored",
                     encoding="utf-8",
                 )
-                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
                     '{"schema_version": "1.0"}',
                     encoding="utf-8",
                 )
@@ -557,7 +588,7 @@ class RunTests(unittest.TestCase):
                     "% tailored",
                     encoding="utf-8",
                 )
-                (run_dir / make_my_resume_fit.CHANGES_FILENAME).write_text(
+                (run_dir / make_my_resume_fit.METADATA_FILENAME).write_text(
                     json.dumps(valid_changes_payload()),
                     encoding="utf-8",
                 )

@@ -29,15 +29,17 @@ Your file output and final response are separate:
   the provided output schema. Do not wrap it in Markdown fences or add prose
   before or after the JSON.
 
-The final JSON is an audit trail for meaningful resume changes. Use
-`schema_version` value `"1.0"`, include `{{OUTPUT_RESUME}}` in `target_files`,
-and report substantive edits in `changes`. Each change must include a stable
-id, resume section, location hint, change type, practical before and after
-snippets, the job-alignment reason, evidence from the source resume or fetched
-job descriptions, and any truthfulness or evidence risk. Omit punctuation-only,
-format-only, or whitespace-only changes. Use `warnings` for unfetched job URLs,
-missing evidence, or claims that should not be strengthened without human
-review.
+The final JSON is metadata and an audit trail for meaningful resume changes.
+Use `schema_version` value `"1.0"`, include a lowercase hyphenated `slug` in
+the form `<shortened company name>-<shortened position>`, include
+`{{OUTPUT_RESUME}}` in `target_files`, and report substantive edits in
+`changes`. Keep `changes` as the final top-level JSON property. Each change
+must include a stable id, resume section, location hint, change type, practical
+before and after snippets, the job-alignment reason, evidence from the source
+resume or fetched job descriptions, and any truthfulness or evidence risk. Omit
+punctuation-only, format-only, or whitespace-only changes. Use `warnings` for
+unfetched job URLs, missing evidence, or claims that should not be strengthened
+without human review.
 
 Fetch and read every supplied job offer URL before tailoring the resume. Base
 the optimization on the fetched job descriptions, requirements, responsibilities,

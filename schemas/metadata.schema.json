@@ -1,24 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/make-my-resume-fit/changes.schema.json",
-  "title": "MakeMyResumeFit Change Audit Trail",
+  "$id": "https://example.invalid/make-my-resume-fit/metadata.schema.json",
+  "title": "MakeMyResumeFit Resume Metadata",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "slug",
     "summary",
     "target_files",
-    "changes",
-    "warnings"
+    "warnings",
+    "changes"
   ],
   "properties": {
     "schema_version": {
       "type": "string"
     },
+    "slug": {
+      "type": "string",
+      "description": "Summarized slug in the form <shortened company name>-<shortened position>.",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
     "summary": {
       "type": "string"
     },
     "target_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
       "type": "array",
       "items": {
         "type": "string"
@@ -69,12 +81,6 @@
             "type": "string"
           }
         }
-      }
-    },
-    "warnings": {
-      "type": "array",
-      "items": {
-        "type": "string"
       }
     }
   }
