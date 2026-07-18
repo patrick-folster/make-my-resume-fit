@@ -19,7 +19,7 @@ an existing `.tex` file, creates the output folder when needed, renders the
 template without unresolved `{{PLACEHOLDER}}` markers, and invokes:
 
 ```bash
-codex exec -
+codex exec --sandbox workspace-write --add-dir <output-folder> -
 ```
 
 The rendered prompt is passed to Codex on standard input.

@@ -93,19 +93,38 @@ class RenderingTests(unittest.TestCase):
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_is_stable(self):
-        self.assertEqual(make_my_resume_fit.build_codex_command(), ["codex", "exec", "-"])
+        self.assertEqual(
+            make_my_resume_fit.build_codex_command(Path("/tmp/out")),
+            [
+                "codex",
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--add-dir",
+                "/tmp/out",
+                "-",
+            ],
+        )
 
     def test_invoke_codex_passes_prompt_on_stdin(self):
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
-                args=make_my_resume_fit.build_codex_command(),
+                args=make_my_resume_fit.build_codex_command(Path("/tmp/out")),
                 returncode=0,
             )
 
-            make_my_resume_fit.invoke_codex("rendered prompt")
+            make_my_resume_fit.invoke_codex("rendered prompt", output_folder=Path("/tmp/out"))
 
         run.assert_called_once_with(
-            ["codex", "exec", "-"],
+            [
+                "codex",
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--add-dir",
+                "/tmp/out",
+                "-",
+            ],
             input="rendered prompt",
             text=True,
             check=False,
@@ -114,17 +133,17 @@ class CodexInvocationTests(unittest.TestCase):
     def test_invoke_codex_reports_missing_executable(self):
         with mock.patch("make_my_resume_fit.subprocess.run", side_effect=FileNotFoundError):
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "not found"):
-                make_my_resume_fit.invoke_codex("prompt")
+                make_my_resume_fit.invoke_codex("prompt", output_folder=Path("/tmp/out"))
 
     def test_invoke_codex_reports_nonzero_exit(self):
         with mock.patch("make_my_resume_fit.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
-                args=make_my_resume_fit.build_codex_command(),
+                args=make_my_resume_fit.build_codex_command(Path("/tmp/out")),
                 returncode=7,
             )
 
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "exit code 7"):
-                make_my_resume_fit.invoke_codex("prompt")
+                make_my_resume_fit.invoke_codex("prompt", output_folder=Path("/tmp/out"))
 
 
 class RunTests(unittest.TestCase):
@@ -153,6 +172,8 @@ class RunTests(unittest.TestCase):
                 self.assertIn(str(resume.resolve()), prompt)
                 self.assertIn("- https://example.com/a", prompt)
                 self.assertIn(str(output.resolve()), prompt)
+                invoke.assert_called_once()
+                self.assertEqual(invoke.call_args.kwargs["output_folder"], output.resolve())
 
 
 if __name__ == "__main__":

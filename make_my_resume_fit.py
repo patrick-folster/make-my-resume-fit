@@ -115,14 +115,22 @@ def render_template(
     return rendered
 
 
-def build_codex_command() -> list[str]:
-    """Return the local Codex command used to consume the rendered prompt on stdin."""
-    return ["codex", "exec", "-"]
+def build_codex_command(output_folder: Path) -> list[str]:
+    """Return the sandboxed Codex command used to consume the prompt on stdin."""
+    return [
+        "codex",
+        "exec",
+        "--sandbox",
+        "workspace-write",
+        "--add-dir",
+        str(output_folder),
+        "-",
+    ]
 
 
-def invoke_codex(prompt: str) -> None:
+def invoke_codex(prompt: str, *, output_folder: Path) -> None:
     """Invoke Codex with the rendered prompt via stdin."""
-    command = build_codex_command()
+    command = build_codex_command(output_folder)
     try:
         completed = subprocess.run(
             command,
@@ -158,7 +166,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             job_offers=args.job_offers,
             output_folder=output_folder,
         )
-        invoke_codex(prompt)
+        invoke_codex(prompt, output_folder=output_folder)
     except ValueError as exc:
         parser.error(str(exc))
     except CodexInvocationError as exc:
