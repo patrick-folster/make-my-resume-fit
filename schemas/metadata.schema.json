@@ -18,7 +18,7 @@
     },
     "slug": {
       "type": "string",
-      "description": "Summarized slug in the form <shortened company name>-<shortened position>.",
+      "description": "Deterministic job-offer slug in the form <company-token>-<role-token>, normalized with the prompt's Slug Rules.",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
     "summary": {

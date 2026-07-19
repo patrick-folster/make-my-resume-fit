@@ -379,9 +379,32 @@ The JSON must conform to the provided output schema.
 Use:
 
 * `"schema_version": "1.0"`;
-* a lowercase, hyphenated `slug` in the form `<shortened-company-name>-<shortened-position>`;
+* a deterministic lowercase, hyphenated `slug` built from the job offer;
 * `{{OUTPUT_RESUME}}` in `target_files`;
 * `changes` as the final top-level JSON property.
+
+## Slug Rules
+
+The `slug` identifies the job offer used for the archive name. It must be stable: the same job offer must produce the same slug across runs, regardless of resume content, tailoring decisions, run date, output filename, or metadata summary wording.
+
+Choose the slug source deterministically:
+
+1. When one job offer is supplied, use that job offer.
+2. When multiple job offers are supplied, use the first successfully fetched job offer in the exact order provided.
+3. If no job offer can be fetched, use the first supplied URL as the slug source and record the fetch failure in `warnings`.
+
+Build the slug as `<company-token>-<role-token>`:
+
+1. Extract the company name and position title from the fetched posting content. Prefer explicit page fields such as job title, company name, structured data, page heading, or application metadata over inferred wording.
+2. If a fetched posting lacks a usable company name, derive the company token from the URL hostname by removing a leading `www` and common job-board host labels such as `jobs`, `careers`, `boards`, `apply`, `greenhouse`, `lever`, and `workday`.
+3. If a fetched posting lacks a usable position title, derive the role token from the most specific job-title-like URL path segment.
+4. Normalize both tokens by lowercasing, converting `&` to `and`, replacing every non-alphanumeric run with one hyphen, trimming leading and trailing hyphens, and collapsing repeated hyphens.
+5. Remove corporate suffix words from the company token when they appear as standalone trailing words: `inc`, `llc`, `ltd`, `limited`, `corp`, `corporation`, `company`, `co`, `plc`, `gmbh`, `sa`, `sarl`, `ag`, `bv`, `pte`.
+6. Remove location, employment type, requisition id, and tracking words from the role token when they are not part of the actual title, such as `remote`, `hybrid`, city or country names, `full-time`, `part-time`, `contract`, `req`, `requisition`, `job`, and numeric-only ids.
+7. Keep the slug concise but recognizable. Use at most six normalized words for the company token and at most eight normalized words for the role token.
+8. Do not add dates, version numbers, resume keywords, seniority guesses, random ids, or URL tracking parameters.
+
+If normalization would produce an empty company or role token, use `unknown-company` or `unknown-role` for that token. The final slug must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
 
 ## Change Audit Requirements
 

@@ -232,6 +232,21 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("truthfulness, ambiguity, or evidence risk", rendered)
         self.assertIn("punctuation-only", rendered)
 
+    def test_rendered_prompt_defines_deterministic_slug_rules(self):
+        rendered = make_my_resume_fit.render_template(
+            make_my_resume_fit.load_template(),
+            input_resume="orig.tex",
+            job_offers=["https://example.com/a", "https://example.com/b"],
+            output_resume="new.tex",
+        )
+
+        self.assertIn("The `slug` identifies the job offer used for the archive name", rendered)
+        self.assertIn("the same job offer must produce the same slug across runs", rendered)
+        self.assertIn("use the first successfully fetched job offer in the exact order provided", rendered)
+        self.assertIn("Build the slug as `<company-token>-<role-token>`", rendered)
+        self.assertIn("converting `&` to `and`", rendered)
+        self.assertIn("The final slug must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`", rendered)
+
 
 class CodexInvocationTests(unittest.TestCase):
     def test_build_codex_command_sandboxes_temp_run_dir_only(self):

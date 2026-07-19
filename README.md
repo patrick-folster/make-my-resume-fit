@@ -33,13 +33,15 @@ optimized LaTeX resume as `<output-name>.tex` in the temp run directory. Codex
 must return only schema-matching JSON as its final response; the wrapper
 captures that final response as temp-local `metadata.json` and validates it
 against
-`schemas/metadata.schema.json`. The metadata includes a lowercase hyphenated
-`slug` in the form `<shortened company name>-<shortened position>`, with
-`changes` as the final top-level JSON property. The wrapper does not grant Codex
-direct access to the repository root, the original resume path, or the final
-output folder. The `--search` flag gives the Codex run live search access, and
-`sandbox_workspace_write.network_access=true` allows sandboxed shell commands
-such as `curl` to fetch job postings directly.
+`schemas/metadata.schema.json`. The metadata includes a deterministic lowercase
+hyphenated `slug` built from the job offer as `<company-token>-<role-token>`,
+with `changes` as the final top-level JSON property. For multiple job offers,
+the prompt instructs Codex to build the slug from the first successfully fetched
+offer in the provided order, so the same job offer produces the same slug across
+runs. The wrapper does not grant Codex direct access to the repository root, the
+original resume path, or the final output folder. The `--search` flag gives the
+Codex run live search access, and `sandbox_workspace_write.network_access=true`
+allows sandboxed shell commands such as `curl` to fetch job postings directly.
 
 After Codex exits successfully, the script verifies that the temp run directory
 contains `<output-name>.tex`, verifies that the captured structured response is
