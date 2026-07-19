@@ -44,12 +44,13 @@ such as `curl` to fetch job postings directly.
 After Codex exits successfully, the script verifies that the temp run directory
 contains `<output-name>.tex`, verifies that the captured structured response is
 valid JSON matching the repository schema, reads the validated metadata `slug`,
-creates `--output-folder` when needed, and writes both final artifacts to a
-dated run archive:
+creates `--output-folder` when needed, and writes the final artifacts to a dated
+run archive:
 
 ```text
 <output-folder>/
 `-- 2026-07-18-v1-example-python-engineer/
+    |-- orig.tex
     |-- tailored-resume.tex
     `-- metadata.json
 ```

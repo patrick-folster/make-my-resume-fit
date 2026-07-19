@@ -212,9 +212,9 @@ class RenderingTests(unittest.TestCase):
             output_resume="new.tex",
         )
 
-        self.assertIn("Fetch and read every supplied job offer URL", rendered)
+        self.assertIn("Fetch and read every supplied job-offer URL", rendered)
         self.assertIn("fetched job descriptions", rendered)
-        self.assertIn("use the available live search or browser tools", rendered)
+        self.assertIn("use any available live-search or browser tools", rendered)
         self.assertNotIn("Do not fetch or validate", rendered)
 
     def test_rendered_prompt_separates_resume_file_from_final_json_response(self):
@@ -225,11 +225,11 @@ class RenderingTests(unittest.TestCase):
             output_resume="new.tex",
         )
 
-        self.assertIn("Write the complete tailored LaTeX resume to `new.tex`", rendered)
-        self.assertIn("Return only JSON in your final assistant response", rendered)
-        self.assertIn("lowercase hyphenated `slug`", rendered)
-        self.assertIn("Keep `changes` as the final top-level JSON property", rendered)
-        self.assertIn("truthfulness or evidence risk", rendered)
+        self.assertIn("Write the complete tailored LaTeX resume to:\n\n`new.tex`", rendered)
+        self.assertIn("return only valid JSON in the final assistant response", rendered)
+        self.assertIn("lowercase, hyphenated `slug`", rendered)
+        self.assertIn("`changes` as the final top-level JSON property", rendered)
+        self.assertIn("truthfulness, ambiguity, or evidence risk", rendered)
         self.assertIn("punctuation-only", rendered)
 
 
@@ -432,12 +432,15 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             generated = root / "new.tex"
+            original = root / "orig.tex"
             output = root / "out"
             generated.write_text("% tailored", encoding="utf-8")
+            original.write_text("% original", encoding="utf-8")
             metadata = valid_changes_payload()
 
             archive = make_my_resume_fit.copy_final_artifacts(
                 generated,
+                original,
                 metadata,
                 output,
                 current_date=dt.date(2026, 7, 18),
@@ -448,10 +451,12 @@ class PublicationTests(unittest.TestCase):
                 (output / "2026-07-18-v1-example-python-engineer").resolve(),
             )
             self.assertEqual((archive / "new.tex").read_text(encoding="utf-8"), "% tailored")
+            self.assertEqual((archive / "orig.tex").read_text(encoding="utf-8"), "% original")
             metadata_text = (archive / "metadata.json").read_text(encoding="utf-8")
             self.assertEqual(json.loads(metadata_text), metadata)
             self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
             self.assertFalse((output / "new.tex").exists())
+            self.assertFalse((output / "orig.tex").exists())
             self.assertFalse((output / "metadata.json").exists())
 
     def test_create_archive_directory_uses_next_version_without_modifying_existing(self):
@@ -478,14 +483,17 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             generated = root / "new.tex"
+            original = root / "orig.tex"
             output = root / "out"
             generated.write_text("% tailored", encoding="utf-8")
+            original.write_text("% original", encoding="utf-8")
             metadata = valid_changes_payload()
             metadata["slug"] = ""
 
             with self.assertRaisesRegex(make_my_resume_fit.CodexInvocationError, "usable slug"):
                 make_my_resume_fit.copy_final_artifacts(
                     generated,
+                    original,
                     metadata,
                     output,
                     current_date=dt.date(2026, 7, 18),
@@ -569,6 +577,7 @@ class RunTests(unittest.TestCase):
                     (archive / "tailored-resume.tex").read_text(encoding="utf-8"),
                     "% tailored",
                 )
+                self.assertEqual((archive / "orig.tex").read_text(encoding="utf-8"), "% resume")
                 metadata_text = (archive / "metadata.json").read_text(encoding="utf-8")
                 self.assertEqual(
                     json.loads(metadata_text),
@@ -576,6 +585,7 @@ class RunTests(unittest.TestCase):
                 )
                 self.assertEqual(list(json.loads(metadata_text).keys())[-1], "changes")
                 self.assertFalse((output / "tailored-resume.tex").exists())
+                self.assertFalse((output / "orig.tex").exists())
                 self.assertFalse((output / "metadata.json").exists())
                 run_dir = invoke.call_args.kwargs["run_dir"]
                 self.assertEqual((run_dir / "orig.tex").read_text(encoding="utf-8"), "% resume")

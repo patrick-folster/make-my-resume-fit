@@ -383,6 +383,7 @@ def create_archive_directory(
 
 def copy_final_artifacts(
     generated_resume: Path,
+    original_resume: Path,
     metadata: dict[str, Any],
     output_folder: Path,
     *,
@@ -397,6 +398,7 @@ def copy_final_artifacts(
     )
     try:
         shutil.copyfile(generated_resume, archive_dir / generated_resume.name)
+        shutil.copyfile(original_resume, archive_dir / ORIGINAL_RESUME_FILENAME)
         (archive_dir / METADATA_FILENAME).write_text(
             json.dumps(metadata, indent=2) + "\n",
             encoding="utf-8",
@@ -426,7 +428,12 @@ def run(argv: Sequence[str] | None = None) -> int:
         invoke_codex(prompt, run_dir=run_dir)
         generated_resume = validate_generated_resume(run_dir, output_resume)
         metadata = validate_metadata_json(run_dir / METADATA_FILENAME)
-        copy_final_artifacts(generated_resume, metadata, args.output_folder)
+        copy_final_artifacts(
+            generated_resume,
+            run_dir / ORIGINAL_RESUME_FILENAME,
+            metadata,
+            args.output_folder,
+        )
     except ValueError as exc:
         parser.error(str(exc))
     except CodexInvocationError as exc:
