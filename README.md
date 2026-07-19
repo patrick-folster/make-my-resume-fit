@@ -6,13 +6,22 @@ prompt to the local Codex CLI.
 
 ## Usage
 
+Clone the repository, enter it, and run the Python script directly:
+
+```bash
+git clone git@github.com:patrick-folster/make-my-resume-fit.git
+cd make-my-resume-fit
+```
+
+Then run the script:
+
 ```bash
 python make_my_resume_fit.py \
-  --original-resume resume.tex \
+  --original-resume in/resume.tex \
   --job-offer https://example.com/a \
   --job-offer https://example.com/b \
   --output-folder out/resume-fit \
-  --output-name tailored-resume
+  --output-name sample-output-resume
 ```
 
 Repeat `--job-offer` once for each URL. Pass `--output-name` as the output file

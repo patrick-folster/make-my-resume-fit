@@ -1,6 +1,6 @@
 [project]
 name = "make-my-resume-fit"
-version = "0.1.0"
+version = "0.0.1"
 description = "CLI for tailoring LaTeX resumes to job offers with Codex."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,8 +24,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/patrickfolster/make-my-resume-fit"
-Issues = "https://github.com/patrickfolster/make-my-resume-fit/issues"
+Homepage = "https://github.com/patrick-folster/make-my-resume-fit"
+Issues = "https://github.com/patrick-folster/make-my-resume-fit/issues"
 
 [project.scripts]
 make-my-resume-fit = "make_my_resume_fit:main"
