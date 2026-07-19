@@ -8,6 +8,7 @@
     "schema_version",
     "slug",
     "summary",
+    "job_offer_urls",
     "target_files",
     "warnings",
     "changes"
@@ -23,6 +24,13 @@
     },
     "summary": {
       "type": "string"
+    },
+    "job_offer_urls": {
+      "type": "array",
+      "description": "Supplied job-offer URLs, preserved exactly in CLI argument order.",
+      "items": {
+        "type": "string"
+      }
     },
     "target_files": {
       "type": "array",

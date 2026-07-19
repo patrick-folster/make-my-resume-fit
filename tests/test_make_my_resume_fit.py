@@ -14,6 +14,7 @@ def valid_changes_payload(target_file="new.tex"):
         "schema_version": "1.0",
         "slug": "example-python-engineer",
         "summary": "Tailored the resume toward the supplied job offer.",
+        "job_offer_urls": ["https://example.com/a"],
         "target_files": [target_file],
         "warnings": [],
         "changes": [
@@ -59,6 +60,34 @@ class ParserTests(unittest.TestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_project_resource_path_prefers_source_tree_and_falls_back_to_install_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            module_dir = root / "source"
+            data_dir = root / "install"
+            module_dir.mkdir()
+            data_dir.mkdir()
+            source_template = module_dir / "resume-fitter.md"
+            source_template.write_text("source", encoding="utf-8")
+
+            self.assertEqual(
+                make_my_resume_fit._project_resource_path(
+                    "resume-fitter.md",
+                    module_dir=module_dir,
+                    data_dir=data_dir,
+                ),
+                source_template,
+            )
+            self.assertEqual(
+                make_my_resume_fit._project_resource_path(
+                    "schemas",
+                    "metadata.schema.json",
+                    module_dir=module_dir,
+                    data_dir=data_dir,
+                ),
+                data_dir / "schemas" / "metadata.schema.json",
+            )
+
     def test_validate_resume_path_requires_existing_tex_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -228,6 +257,7 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("Write the complete tailored LaTeX resume to:\n\n`new.tex`", rendered)
         self.assertIn("return only valid JSON in the final assistant response", rendered)
         self.assertIn("lowercase, hyphenated `slug`", rendered)
+        self.assertIn("`job_offer_urls` as an array containing every supplied job-offer URL", rendered)
         self.assertIn("`changes` as the final top-level JSON property", rendered)
         self.assertIn("truthfulness, ambiguity, or evidence risk", rendered)
         self.assertIn("punctuation-only", rendered)
@@ -371,6 +401,36 @@ class CodexInvocationTests(unittest.TestCase):
                 make_my_resume_fit.validate_metadata_json(metadata_path),
                 valid_changes_payload(),
             )
+
+    def test_validate_metadata_json_requires_job_offer_urls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metadata_path = Path(tmp) / "metadata.json"
+            payload = valid_changes_payload()
+            del payload["job_offer_urls"]
+            metadata_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                r"\$\.job_offer_urls is required",
+            ):
+                make_my_resume_fit.validate_metadata_json(metadata_path)
+
+    def test_validate_metadata_json_rejects_mismatched_job_offer_urls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metadata_path = Path(tmp) / "metadata.json"
+            metadata_path.write_text(json.dumps(valid_changes_payload()), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                make_my_resume_fit.CodexInvocationError,
+                "does not include the supplied job-offer URLs exactly as provided",
+            ):
+                make_my_resume_fit.validate_metadata_json(
+                    metadata_path,
+                    expected_job_offers=[
+                        "https://example.com/a",
+                        "https://example.com/b",
+                    ],
+                )
 
     def test_validate_metadata_json_requires_file(self):
         with tempfile.TemporaryDirectory() as tmp:

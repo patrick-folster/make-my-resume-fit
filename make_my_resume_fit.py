@@ -10,13 +10,33 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
 
-TEMPLATE_PATH = Path(__file__).with_name("resume-fitter.md")
-METADATA_SCHEMA_PATH = Path(__file__).with_name("schemas") / "metadata.schema.json"
+def _project_resource_path(
+    *parts: str,
+    module_dir: Path | None = None,
+    data_dir: Path | None = None,
+) -> Path:
+    """Return a source-tree or installed-package resource path.
+
+    Setuptools installs this single-module project with non-Python resources in
+    the installation data directory. Source-tree runs still keep those files
+    beside this module, so prefer that layout when it exists.
+    """
+    source_path = (module_dir or Path(__file__).resolve().parent).joinpath(*parts)
+    if source_path.exists():
+        return source_path
+
+    install_data = data_dir or Path(sysconfig.get_path("data"))
+    return install_data.joinpath(*parts)
+
+
+TEMPLATE_PATH = _project_resource_path("resume-fitter.md")
+METADATA_SCHEMA_PATH = _project_resource_path("schemas", "metadata.schema.json")
 ORIGINAL_RESUME_FILENAME = "orig.tex"
 TAILORED_RESUME_FILENAME = "new.tex"
 METADATA_FILENAME = "metadata.json"
@@ -310,6 +330,8 @@ def _validate_schema_subset(value: Any, schema: dict[str, Any], path: str) -> li
 def validate_metadata_json(
     metadata_path: Path,
     schema_path: Path = METADATA_SCHEMA_PATH,
+    *,
+    expected_job_offers: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Return parsed metadata.json after checking presence, JSON syntax, and schema shape."""
     if not metadata_path.is_file():
@@ -335,6 +357,15 @@ def validate_metadata_json(
         raise CodexInvocationError(
             f"Codex structured output {METADATA_FILENAME} does not match schema: {joined}"
         )
+
+    if expected_job_offers is not None:
+        actual_job_offers = metadata.get("job_offer_urls")
+        expected = list(expected_job_offers)
+        if actual_job_offers != expected:
+            raise CodexInvocationError(
+                f"Codex structured output {METADATA_FILENAME} does not include the "
+                "supplied job-offer URLs exactly as provided."
+            )
 
     return metadata
 
@@ -427,7 +458,10 @@ def run(argv: Sequence[str] | None = None) -> int:
         )
         invoke_codex(prompt, run_dir=run_dir)
         generated_resume = validate_generated_resume(run_dir, output_resume)
-        metadata = validate_metadata_json(run_dir / METADATA_FILENAME)
+        metadata = validate_metadata_json(
+            run_dir / METADATA_FILENAME,
+            expected_job_offers=args.job_offers,
+        )
         copy_final_artifacts(
             generated_resume,
             run_dir / ORIGINAL_RESUME_FILENAME,

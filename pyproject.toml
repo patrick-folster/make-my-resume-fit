@@ -1,9 +1,42 @@
 [project]
 name = "make-my-resume-fit"
 version = "0.1.0"
-description = "Minimal CLI for rendering a resume-fitting Codex prompt."
+description = "CLI for tailoring LaTeX resumes to job offers with Codex."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Patrick Folster" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Office/Business",
+  "Topic :: Text Processing :: Markup :: LaTeX",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/patrickfolster/make-my-resume-fit"
+Issues = "https://github.com/patrickfolster/make-my-resume-fit/issues"
 
 [project.scripts]
 make-my-resume-fit = "make_my_resume_fit:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["make_my_resume_fit"]
+
+[tool.setuptools.data-files]
+"." = ["resume-fitter.md"]
+"schemas" = ["schemas/metadata.schema.json"]

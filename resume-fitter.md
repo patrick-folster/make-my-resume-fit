@@ -380,6 +380,7 @@ Use:
 
 * `"schema_version": "1.0"`;
 * a deterministic lowercase, hyphenated `slug` built from the job offer;
+* `job_offer_urls` as an array containing every supplied job-offer URL exactly as provided, in the same order;
 * `{{OUTPUT_RESUME}}` in `target_files`;
 * `changes` as the final top-level JSON property.
 
