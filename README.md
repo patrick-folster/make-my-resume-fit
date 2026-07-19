@@ -4,6 +4,14 @@
 one or more job offer URLs, and temp-local filenames, then sends the rendered
 prompt to the local Codex CLI.
 
+## Requirements
+
+A configured and working local `codex` command is mandatory. The wrapper does
+not tailor resumes by itself; it renders the prompt and invokes Codex to fetch
+job postings, edit the temporary resume, and return structured metadata. Verify
+that `codex` is installed, authenticated, and able to run before using this
+project.
+
 ## Usage
 
 Clone the repository, enter it, and run the Python script directly:
@@ -89,3 +97,15 @@ make-my-resume-fit
 ```bash
 python -m unittest
 ```
+
+## Legal
+
+This project is provided under the MIT License and is offered "as is", without
+any warranty. See [DISCLAIMER.md](DISCLAIMER.md) for additional project-risk
+notice, [PRIVACY.md](PRIVACY.md) for data-handling notes, and
+[THIRD_PARTY_CONTENT.md](THIRD_PARTY_CONTENT.md) for job-posting access and use
+responsibilities.
+
+Generated resumes and metadata may contain errors, omissions, unsupported
+claims, or formatting issues. Review every output carefully before submitting or
+sharing it.

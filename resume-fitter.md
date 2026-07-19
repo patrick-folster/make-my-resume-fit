@@ -37,6 +37,12 @@ The finished resume must work well for both:
 
 Optimize relevance, clarity, keyword alignment, evidence, readability, and text-extraction quality without inventing or exaggerating qualifications.
 
+Do not state or imply that the tailored resume is guaranteed to pass applicant
+tracking systems, meet employer requirements, produce interviews, produce job
+offers, comply with any law or policy, or be suitable for any particular
+purpose. The final JSON may describe improvements and limitations, but it must
+not promise outcomes.
+
 ## Job-Offer Retrieval
 
 Fetch and read every supplied job-offer URL before modifying the resume.
@@ -449,6 +455,7 @@ Use `warnings` for:
 * missing or ambiguous evidence;
 * unsupported keywords found in a posting;
 * statements that should not be strengthened without human review;
+* generated content or metadata that needs human verification before submission or sharing;
 * unavailable compilation or PDF-text validation;
 * conflicts among multiple job descriptions;
 * job requirements the candidate does not appear to meet.
